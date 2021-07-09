@@ -17,7 +17,7 @@ def test_trispectrum_sanity():
 def test_error_sanity():
     err, phi = calculate_error(np.array([[1, 2], [1, 2]]), np.array([[1, 2], [1, 2]]))
     assert pytest.approx(err, abs=1e-5) == 0
-    assert pytest.approx(phi[0]) == 0
+    assert pytest.approx(phi[0], abs=1e-10) == 0
 
 
 def test_error_with_circulant():
@@ -44,3 +44,13 @@ def test_error_circulant_distortion_no_phi():
     err, phi = calculate_error(distorted, original)
     assert err > 1
     assert pytest.approx(phi[0]) == np.pi / 4
+
+
+def test_trispectrum_anomaly():
+    x = np.array([12321312,1,2,3,5,111112332,2,32
+                  ])
+    data = np.array([x])
+    data_fft = np.fft.fft(data)
+    ss = signal_trispectrum_from_signal(x)
+    sd = signal_trispectrum_from_data(data_fft, 0)
+    assert pytest.approx(ss) == sd * 2
