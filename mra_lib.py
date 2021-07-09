@@ -94,7 +94,7 @@ def recover_cov_estimator(data, sigma=0):
                     t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
                     - G_arr[(k2 - k1) % L][k1, (k1 + m) % L]
                     - G_arr[m][k1, k2]
-                    - G_arr[(k1+k2+m) % L] [(-k2) % L, (-k2 -m) % L]
+                    # - G_arr[(k1+k2+m) % L] [(-k2) % L, (-k2 -m) % L]
                 ), 2)
     obj = cp.Minimize(expression)
     problem = cp.Problem(obj)
