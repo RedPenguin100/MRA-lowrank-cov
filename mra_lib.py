@@ -114,13 +114,10 @@ def recover_cov_estimator(data, sigma=0):
 
 def generate_xs(n):
     v_1 = np.array([1, 2, 3, 4], dtype='complex128')
-    v_2 = np.array([1 + 1j, 2 - 1j, 8, 3], dtype='complex128')
-    lambda_1 = 1
-    lambda_2 = 1
+    lambda_1 = 0.5
     x_samples = np.outer(np.random.normal(0, np.square(lambda_1) / 2, size=n) +
                          np.random.normal(0, np.square(lambda_1) / 2, size=n) * 1j, v_1)
-    x_samples += np.outer(np.random.normal(0, np.square(lambda_2) / 2, size=n) +
-                          np.random.normal(0, np.square(lambda_2) / 2, size=n) * 1j, v_2)
+
     return x_samples
 
 
@@ -141,7 +138,7 @@ def create_matrix_from_diagonals(diagonals):
 
 
 if __name__ == "__main__":
-    x_samples = generate_xs(n=1000000)
+    x_samples = generate_xs(n=10000)
     _, L = x_samples.shape
     cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
     cov_hat = get_cov_hat(x_samples)
