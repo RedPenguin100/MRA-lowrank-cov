@@ -47,10 +47,11 @@ def test_error_circulant_distortion_no_phi():
 
 
 def test_trispectrum_anomaly():
+    np.random.seed(42)
     x_samples = generate_xs(1000)
     x_samples_fft = get_fft(x_samples)
     tri_from_data = signal_trispectrum_from_data(x_samples_fft, 0)
     tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(x_samples))
-    # print("From data: ", tri_from_data)
-    # print("From cov hat: ", tri_from_cov)
+    print("Real: ", tri_from_cov)
+    print("Estimated: ", tri_from_data)
     print("Ratio: ", np.mean(tri_from_data / tri_from_cov))

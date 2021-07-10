@@ -79,7 +79,7 @@ def recover_cov_estimator(data, sigma=0):
     data_fft = get_fft(data)
     p_y_estimator = signal_power_spectrum_from_data(data_fft, sigma)
     print(p_y_estimator)
-    t_y_estimator = signal_trispectrum_from_data(data_fft, sigma) * 1.5
+    t_y_estimator = signal_trispectrum_from_data(data_fft, sigma)
     print("Estimated trispectrum: ", t_y_estimator)
     G_arr = []
     G_arr.append(np.outer(p_y_estimator, p_y_estimator))
@@ -116,13 +116,13 @@ def get_cov_hat(x_samples):
     cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft), axis=0)
     return cov_hat
 
-
-x_samples = generate_xs(n=1000000)
+np.random.seed(42)
+x_samples = generate_xs(n=1000)
 _, L = x_samples.shape
 cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
 cov_hat = get_cov_hat(x_samples)
 
-print("cov_hat: ", np.real(get_cov_hat(x_samples)))
+print("cov_hat: ", get_cov_hat(x_samples))
 print("Real trispectrum: ", signal_trispectrum_from_cov_hat(cov_hat))
 
 G = recover_cov_estimator(x_samples)
