@@ -8,8 +8,8 @@ from mra_lib import *
 def test_trispectrum_sanity():
     data = np.array([[1, 2, 3], [2, 3, 1], [3, 1, 2]])
     data_fft = np.fft.fft(data)
-    res1 = signal_trispectrum_from_data(data_fft, 0)
-    res2 = signal_trispectrum_from_data(np.fft.fft(np.array([[1, 2, 3]])), 0)
+    res1 = signal_trispectrum_from_data(data_fft)
+    res2 = signal_trispectrum_from_data(np.fft.fft(np.array([[1, 2, 3]])))
 
     assert pytest.approx(res1) == res2
 
@@ -46,11 +46,9 @@ def test_error_circulant_distortion_no_phi():
     assert pytest.approx(phi[0]) == np.pi / 4
 
 
-def test_trispectrum_anomaly():
+def test_trispectrum_identity():
     x_samples = generate_xs(100000)
     x_samples_fft = get_fft(x_samples)
-    tri_from_data = signal_trispectrum_from_data(x_samples_fft, 0)
+    tri_from_data = signal_trispectrum_from_data(x_samples_fft)
     tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(x_samples))
-    print("Real: ", tri_from_cov)
-    print("Estimated: ", tri_from_data)
     assert pytest.approx(np.mean(tri_from_data / tri_from_cov), abs=1e-2) == 1
