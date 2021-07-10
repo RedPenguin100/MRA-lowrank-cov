@@ -105,34 +105,39 @@ def recover_cov_estimator(data, sigma=0):
 
 
 def generate_xs(n):
-    v_1 = np.array([1, 2], dtype='complex128')
+    v_1 = np.array([1, 2, 3, 4], dtype='complex128')
     lambda_1 = 1
-    x_samples = np.outer(np.random.normal(0, np.square(lambda_1), size=n), v_1)
+    x_samples = np.outer(np.random.normal(0, np.square(lambda_1) / 2, size=n) +
+                         np.random.normal(0, np.square(lambda_1) / 2, size=n) * 1j, v_1)
     return x_samples
 
 
 def get_cov_hat(x_samples):
     x_samples_fft = get_fft(x_samples)
-    cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft), axis=0)
+    cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft.conj()), axis=0)
     return cov_hat
 
-np.random.seed(42)
-x_samples = generate_xs(n=1000)
-_, L = x_samples.shape
-cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
-cov_hat = get_cov_hat(x_samples)
 
-print("cov_hat: ", get_cov_hat(x_samples))
-print("Real trispectrum: ", signal_trispectrum_from_cov_hat(cov_hat))
+if __name__ == "__main__":
+    np.random.seed(42)
+    x_samples = generate_xs(n=1000)
+    _, L = x_samples.shape
+    cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
+    cov_hat = get_cov_hat(x_samples)
 
-G = recover_cov_estimator(x_samples)
-w, v = np.linalg.eig(G)
-largest_eigval = np.max(w)
-largest_eigvec = v[:, np.argmax(w)]
-a = np.sqrt(largest_eigval) * largest_eigvec
-print("d_1 estimate=", a)
-d_1_actual = np.real(diag_wrap(cov_hat, 1))
-print("d_1 actual: ", d_1_actual)
-d_0_actual = np.real(diag_wrap(cov_hat, 0))
-print("d_0 actual: ", d_0_actual)
-# print(calculate_error(np.array([[d_0_actual[0], a[0]], [a[1], d_0_actual[1]]]), cov_hat))
+    print("cov_hat: ", get_cov_hat(x_samples))
+    print("Real trispectrum: ", signal_trispectrum_from_cov_hat(cov_hat))
+
+    G = recover_cov_estimator(x_samples)
+    w, v = np.linalg.eig(G)
+    largest_eigval = np.max(w)
+    largest_eigvec = v[:, np.argmax(w)]
+    a = np.sqrt(largest_eigval) * largest_eigvec
+    print("d_1 estimate=", a)
+    d_1_actual = np.real(diag_wrap(cov_hat, 1))
+    print("d_1 actual: ", d_1_actual)
+    d_0_actual = np.real(diag_wrap(cov_hat, 0))
+    print("d_0 actual: ", d_0_actual)
+    estimated_cov_hat = np.array([[d_0_actual[0], a[0]], [a[1], d_0_actual[1]]])
+    print(estimated_cov_hat)
+    # print(calculate_error(estimated_cov_hat, cov_hat))
