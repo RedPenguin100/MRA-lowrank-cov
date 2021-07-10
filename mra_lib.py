@@ -4,6 +4,12 @@ import scipy.linalg
 import scipy.optimize
 
 
+def get_fft(x):
+    N, L = x.shape
+    # return (1 / np.sqrt(L)) * np.fft.fft(x)
+    return np.fft.fft(x)
+
+
 def diag_wrap(matrix, k):
     L, L2 = matrix.shape
     assert L == L2
@@ -30,21 +36,15 @@ def signal_trispectrum_from_data(data_fft, sigma):
     return trispectrum
 
 
-def get_cov_matrix(signal):
-    L = signal.shape[0]
-    x_hat = np.fft.fft(signal)
-    return np.outer(x_hat, x_hat.conjugate())
-
-
-def signal_trispectrum_from_signal(signal):
-    cov_mat = get_cov_matrix(signal)
-    L = signal.shape[0]
+def signal_trispectrum_from_cov_hat(cov_hat):
+    L, L2 = cov_hat.shape
+    assert L == L2
     trispectrum = np.zeros((L, L, L), dtype='complex128')
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
-                trispectrum[k1, k2, k3] = cov_mat[k1, k2] * cov_mat[(k3 - k2 + k1) % L, k3].conj() \
-                                          + cov_mat[k1, (k3 - k2 + k1) % L] * cov_mat[k2, k3].conj()
+                trispectrum[k1, k2, k3] = cov_hat[k1, k2] * cov_hat[(k3 - k2 + k1) % L, k3].conj() \
+                                          + cov_hat[k1, (k3 - k2 + k1) % L] * cov_hat[k2, k3].conj()
     return trispectrum
 
 
@@ -76,10 +76,10 @@ def calculate_error(c_x_est, cov_fft):
 def recover_cov_estimator(data, sigma=0):
     N, L = data.shape
 
-    data_fft = np.fft.fft(data)
+    data_fft = get_fft(data)
     p_y_estimator = signal_power_spectrum_from_data(data_fft, sigma)
     print(p_y_estimator)
-    t_y_estimator = signal_trispectrum_from_data(data_fft, sigma)
+    t_y_estimator = signal_trispectrum_from_data(data_fft, sigma) * 1.5
     print("Estimated trispectrum: ", t_y_estimator)
     G_arr = []
     G_arr.append(np.outer(p_y_estimator, p_y_estimator))
@@ -104,14 +104,28 @@ def recover_cov_estimator(data, sigma=0):
     return G_arr[1].value
 
 
-x = np.array([1, 2])
-L = x.shape[0]
-x_hat = np.fft.fft(x)
-cov_hat = np.outer(x_hat, x_hat.conjugate())
-print("cov_hat: ", np.real(cov_hat))
-print("Real trispectrum: ", signal_trispectrum_from_signal(x))
+def generate_xs(n):
+    v_1 = np.array([1, 2], dtype='complex128')
+    lambda_1 = 1
+    x_samples = np.outer(np.random.normal(0, np.square(lambda_1), size=n), v_1)
+    return x_samples
 
-G = recover_cov_estimator(np.array([x, np.roll(x, 1), x, np.roll(x, 1)]))
+
+def get_cov_hat(x_samples):
+    x_samples_fft = get_fft(x_samples)
+    cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft), axis=0)
+    return cov_hat
+
+
+x_samples = generate_xs(n=1000000)
+_, L = x_samples.shape
+cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
+cov_hat = get_cov_hat(x_samples)
+
+print("cov_hat: ", np.real(get_cov_hat(x_samples)))
+print("Real trispectrum: ", signal_trispectrum_from_cov_hat(cov_hat))
+
+G = recover_cov_estimator(x_samples)
 w, v = np.linalg.eig(G)
 largest_eigval = np.max(w)
 largest_eigvec = v[:, np.argmax(w)]
@@ -119,5 +133,6 @@ a = np.sqrt(largest_eigval) * largest_eigvec
 print("d_1 estimate=", a)
 d_1_actual = np.real(diag_wrap(cov_hat, 1))
 print("d_1 actual: ", d_1_actual)
-
-print(calculate_error(np.array([[9, a[0]], [a[1], 1]]), cov_hat))
+d_0_actual = np.real(diag_wrap(cov_hat, 0))
+print("d_0 actual: ", d_0_actual)
+# print(calculate_error(np.array([[d_0_actual[0], a[0]], [a[1], d_0_actual[1]]]), cov_hat))

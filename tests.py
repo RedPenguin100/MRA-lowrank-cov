@@ -47,10 +47,10 @@ def test_error_circulant_distortion_no_phi():
 
 
 def test_trispectrum_anomaly():
-    x = np.array([12321312,1,2,3,5,111112332,2,32
-                  ])
-    data = np.array([x])
-    data_fft = np.fft.fft(data)
-    ss = signal_trispectrum_from_signal(x)
-    sd = signal_trispectrum_from_data(data_fft, 0)
-    assert pytest.approx(ss) == sd * 2
+    x_samples = generate_xs(1000)
+    x_samples_fft = get_fft(x_samples)
+    tri_from_data = signal_trispectrum_from_data(x_samples_fft, 0)
+    tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(x_samples))
+    # print("From data: ", tri_from_data)
+    # print("From cov hat: ", tri_from_cov)
+    print("Ratio: ", np.mean(tri_from_data / tri_from_cov))
