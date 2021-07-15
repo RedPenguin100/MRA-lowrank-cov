@@ -152,6 +152,14 @@ def create_matrix_from_diagonals(diagonals):
     return target_matrix
 
 
+def get_H_matrix(C_x, i, j):
+    # TODO: roll is extremely inefficient, improve efficiency.
+    rotated_c_x = np.copy(C_x)
+    rotated_c_x = np.roll(rotated_c_x, -i, axis=0)
+    rotated_c_x = np.roll(rotated_c_x, -j, axis=1)
+    return C_x * rotated_c_x.conj()  # Hadamard product
+
+
 if __name__ == "__main__":
     x_samples = generate_xs(n=10000)
     _, L = x_samples.shape

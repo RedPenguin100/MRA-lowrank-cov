@@ -52,3 +52,14 @@ def test_trispectrum_identity():
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
     tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(x_samples))
     assert pytest.approx(np.mean(tri_from_data / tri_from_cov), abs=1e-2) == 1
+
+
+def test_get_H():
+    x_samples = generate_xs(100000)
+    _, L = x_samples.shape
+    cov_hat = get_cov_hat(x_samples)
+    c_x = recover_c_x_estimator(roll_xs(x_samples))
+    for i in range(L):
+        h_ii_estimator = get_H_matrix(c_x, i, i)
+        h_ii = get_H_matrix(cov_hat, i, i)
+        assert pytest.approx(np.mean(h_ii / h_ii_estimator), abs=1e-2) == 1
