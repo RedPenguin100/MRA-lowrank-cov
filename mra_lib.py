@@ -48,7 +48,11 @@ def signal_trispectrum_from_cov_hat(cov_hat):
     return trispectrum
 
 
-def calculate_error(c_x_est, cov_fft):
+def calculate_error_up_to_circulant(c_x_est, cov_fft):
+    """
+    Calculates the error between C_x estimator and FFT of the original Covariance matrix
+    disregarding the circulant angles multiplication.
+    """
     # TODO: make efficient
     L, L2 = cov_fft.shape
     assert L == L2
@@ -72,7 +76,7 @@ def calculate_error(c_x_est, cov_fft):
     return np.sqrt(error), phi
 
 
-def recover_cov_estimator(data, sigma=0):
+def recover_c_x_estimator(data, sigma=0):
     N, L = data.shape
 
     data_fft = get_fft(data)
@@ -112,16 +116,27 @@ def recover_cov_estimator(data, sigma=0):
     return cov_estimator
 
 
+def roll_xs(x_samples):
+    N, L = x_samples.shape
+    for i in range(N):
+        x_samples[i] = np.roll(x_samples[i], i % L)
+
+    return x_samples
+
+
 def generate_xs(n):
     v_1 = np.array([1, 2, 3, 4], dtype='complex128')
     lambda_1 = 0.5
     x_samples = np.outer(np.random.normal(0, np.square(lambda_1) / 2, size=n) +
                          np.random.normal(0, np.square(lambda_1) / 2, size=n) * 1j, v_1)
-
     return x_samples
 
 
 def get_cov_hat(x_samples):
+    """
+    :note: The samples here must not be rolled, or at least
+    all of them rolled with the same offset.
+    """
     x_samples_fft = get_fft(x_samples)
     cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft.conj()), axis=0)
     return cov_hat
@@ -145,6 +160,6 @@ if __name__ == "__main__":
 
     print("cov_hat: ", get_cov_hat(x_samples))
 
-    cov_estimator = recover_cov_estimator(x_samples)
+    c_x_estimator = recover_c_x_estimator(roll_xs(x_samples))
 
-    print(calculate_error(cov_estimator, cov_hat))
+    print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
