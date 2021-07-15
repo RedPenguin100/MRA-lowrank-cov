@@ -105,7 +105,7 @@ def recover_c_x_estimator(data, sigma=0):
     print(problem.status)
     G_arr = [G_arr[i].value for i in range(1, len(G_arr))]
 
-    d_estimates = [signal_power_spectrum_from_data(get_fft(x_samples), 0)]
+    d_estimates = [p_y_estimator]
     for G in G_arr:
         w, v = np.linalg.eig(G)
         largest_eigval = np.max(w)
