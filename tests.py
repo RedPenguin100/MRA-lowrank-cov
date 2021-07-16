@@ -63,3 +63,18 @@ def test_get_H():
         h_ii_estimator = get_H_matrix(c_x, i, i)
         h_ii = get_H_matrix(cov_hat, i, i)
         assert pytest.approx(np.mean(h_ii / h_ii_estimator), abs=1e-2) == 1
+
+
+def test_get_K():
+    symmetric_psd = np.array([[1, 2], [2, 5]])
+    K = get_K_matrix(symmetric_psd)
+    assert pytest.approx(np.linalg.norm(K @ K.conj().T - symmetric_psd)) == 0
+
+
+def test_solve_ambiguities():
+    np.random.seed(42)
+    x_samples = generate_xs(10000)
+    _, L = x_samples.shape
+    # c_x = recover_c_x_estimator(roll_xs(x_samples))
+    c_x = recover_c_x_estimator(roll_xs(x_samples))
+    solve_ambiguities(c_x, r=1)

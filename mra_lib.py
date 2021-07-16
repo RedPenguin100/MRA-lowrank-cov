@@ -125,7 +125,7 @@ def roll_xs(x_samples):
 
 
 def generate_xs(n):
-    v_1 = np.array([1, 2, 3, 4], dtype='complex128')
+    v_1 = np.array([1, 2, 3, 4, 5], dtype='complex128')
     lambda_1 = 0.5
     x_samples = np.outer(np.random.normal(0, np.square(lambda_1) / 2, size=n) +
                          np.random.normal(0, np.square(lambda_1) / 2, size=n) * 1j, v_1)
@@ -158,6 +158,70 @@ def get_H_matrix(C_x, i, j):
     rotated_c_x = np.roll(rotated_c_x, -i, axis=0)
     rotated_c_x = np.roll(rotated_c_x, -j, axis=1)
     return C_x * rotated_c_x.conj()  # Hadamard product
+
+
+def get_S_matrix(X):
+    L1, L = X.shape
+    assert L1 == L
+    S = np.zeros((L ** 2, L ** 2))
+    for i in range(L):
+        for j in range(L):
+            S[L * i:L * i + L, L * j:L * j + L] = get_H_matrix(X, i, j)
+    return S
+
+
+def get_K_matrix(S):
+    L_squared, L_squared2 = S.shape
+    assert L_squared == L_squared2
+    w, v = np.linalg.eig(S)
+    # v @ np.diag(w) @ v.T
+    K = v @ np.sqrt(np.diag(w))
+    return K
+
+
+def get_V_matrix(H, r=1):
+    """
+    :param H: Hermitian or real symmetric matrix.
+    """
+    L1, L = H.shape
+    assert L1 == L
+    assert r ** 2 < L
+    w, v = np.linalg.eig(H)
+    arg_max_eigvals = w.argsort()[-r ** 2:][::-1]
+    return v[:, arg_max_eigvals]
+
+
+def get_e_m(m, L):
+    assert m < L
+    e_m = np.zeros(L)
+    e_m[m] = 1
+    return e_m
+
+
+def solve_ambiguities(C_x, r=1):
+    L1, L = C_x.shape
+    assert L1 == L
+
+    V_array = np.zeros((L, L, r ** 2))
+    for i in range(L):
+        V_array[i] = get_V_matrix(get_H_matrix(C_x, i, i), r=r)
+    Z_array = np.zeros((L, L ** 2, r ** 4))
+    for i in range(L):
+        Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
+    block_diag = scipy.linalg.block_diag(*list(Z_array))
+
+    M_array = np.zeros((L, L, L ** 2))
+    for m in range(L):
+        e_m = get_e_m(m=m, L=L)
+        circulant = scipy.linalg.circulant(e_m).T.flatten(order='F')
+        for i in range(L):
+            M_array[i][m] = get_H_matrix(C_x, i, (i + 1) % L).flatten(order='F') * circulant
+    M_mat = np.hstack(M_array).T
+    A = np.hstack((M_mat, -block_diag))
+    print(A.shape)
+    u, s, vh = np.linalg.svd(A)
+    print("Singular values(last): ", s[-1])
+    print("Singular values(before last): ", s[-2])
 
 
 if __name__ == "__main__":
