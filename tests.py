@@ -46,17 +46,17 @@ def test_error_circulant_distortion_no_phi():
 
 
 def test_trispectrum_identity():
-    x_samples = generate_xs(100000)
+    x_samples, v_arr = generate_xs(100000)
     x_samples_fft = get_fft(x_samples)
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
-    tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(x_samples))
+    tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(v_arr))
     assert pytest.approx(np.mean(tri_from_data / tri_from_cov), abs=1e-2) == 1
 
 
 def test_get_H():
-    x_samples = generate_xs(100000)
+    x_samples, v_arr = generate_xs(100000)
     _, L = x_samples.shape
-    cov_hat = get_cov_hat(x_samples)
+    cov_hat = get_cov_hat(v_arr)
     c_x = recover_c_x_estimator(roll_xs(x_samples))
     for i in range(L):
         h_ii_estimator = get_H_matrix(c_x, i, i)
@@ -74,9 +74,18 @@ def test_solve_ambiguities():
     np.random.seed(42)
     lambdas = [1]
     r = len(lambdas)
-    L = 4
-    x_samples = generate_xs(10000, L=L, lambdas=lambdas)
+    L = 5
+    x_samples, v_arr = generate_xs(100000, L=L, lambdas=lambdas)
     c_x = recover_c_x_estimator(roll_xs(x_samples))
-    solve_ambiguities(c_x, r=r)
-    # cov_hat = get_cov_hat(x_samples)
-    # solve_ambiguities(cov_hat, r=r)
+    cov_hat = get_cov_hat(v_arr)
+    cov_estimator = solve_ambiguities(cov_hat, r=r)
+
+    error = np.inf
+    cov_mat = get_cov(v_arr)
+    cov_estimator_no_fft = reverse_cov_fft(cov_estimator)
+
+    for i in range(L):
+        error = np.min((np.linalg.norm(cov_estimator_no_fft - cov_mat), error))
+        cov_mat = np.roll(cov_mat, (1,1), axis=(0, 1))
+    print(f"Final error: {error}")
+    print(calculate_error_up_to_circulant(cov_hat, cov_estimator))

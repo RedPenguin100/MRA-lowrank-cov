@@ -10,6 +10,13 @@ def get_fft(x):
     return np.fft.fft(x)
 
 
+def reverse_cov_fft(cov_hat):
+    """
+    This is good up to a phase.
+    """
+    return np.fft.ifft(np.fft.ifft(cov_hat.T).conj().T)
+
+
 def diag_wrap(matrix, k):
     L, L2 = matrix.shape
     assert L == L2
@@ -127,24 +134,30 @@ def roll_xs(x_samples):
 def generate_xs(n, lambdas=None, L=5):
     if lambdas is None:
         lambdas = [1]
-    v_arr = []
+    r = len(lambdas)
+    v_arr = np.zeros((L, r), dtype=np.complex128)
     x_samples = np.zeros((n, L), dtype=np.complex128)
-    for lamb in lambdas:
-        v_i = np.random.uniform(0, 1, L)
-        v_arr.append(v_i / np.linalg.norm(v_i))
-        x_samples += np.outer(np.random.normal(0, lamb / 2, size=n) +
-                              np.random.normal(0, lamb / 2, size=n) * 1j, v_i)
-    return x_samples
+    for i, lamb in enumerate(lambdas):
+        # v_i = np.random.uniform(0, 1, L)
+        v_i = np.array([1, 2, 3, 4, 5], dtype=np.complex128)
+        # v_arr[:, i] = (v_i / np.linalg.norm(v_i))
+        v_arr[:, i] = v_i
+        x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
+                              np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
+    return x_samples, v_arr.T
 
 
 def get_cov_hat(x_samples):
     """
-    :note: The samples here must not be rolled, or at least
-    all of them rolled with the same offset.
+    Cov hat is the covariance of the fourier transformed vectors,
+    not the fourier transform of the covariance matrix.
     """
-    x_samples_fft = get_fft(x_samples)
-    cov_hat = np.mean(np.einsum('bi,bo->bio', x_samples_fft, x_samples_fft.conj()), axis=0)
-    return cov_hat
+    fft_samples = get_fft(x_samples)
+    return np.mean(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
+
+
+def get_cov(x_samples):
+    return np.mean(np.einsum('bi,bo->bio', x_samples, x_samples.conj()), axis=0)
 
 
 def create_matrix_from_diagonals(diagonals):
@@ -225,20 +238,35 @@ def solve_ambiguities(C_x, r=1):
             M_array[i][m] = H_i_i1.flatten(order='F') * circulant
     M_mat = np.hstack(M_array).T
     A = np.hstack((M_mat, -block_diag))
-    print((L ** 3, L + L * r ** 4))
-    u, s, vh = np.linalg.svd(A)
-    print("Singular values(last): ", s[-1])
-    print("Singular values(before last): ", s[-2])
+    # print((L ** 3, L + L * r ** 4))
+    # u, s, vh = np.linalg.svd(A)
+    # print("Singular values(last): ", s[-1])
+    # print("Singular values(before last): ", s[-2])
+    b = np.dot(np.conj(A).T, A)
+    w, v = np.linalg.eig(b)
+    V = v[:, np.argmin(w)]
+    phi = np.zeros(L, dtype=np.complex128)
+    phi[0] = 0
+    k = 1
+    for m in range(1, L):
+        phi[m] = - np.sum(np.angle(V[0:m])) \
+                 + (m / L) * np.sum(np.angle(V[0:L])) \
+                 + (2 * np.pi * k * m) / L
+    print(phi)
+    # phi[:] = np.array([1, 4.084070449624307, 3.455751931134913, 2.8274333760446733, 2.199114857555278])
+    phases = np.exp(-1j * phi)
+    print(phases)
+    cov_estimator = C_x * scipy.linalg.circulant(phases).T
+    return cov_estimator
 
 
 if __name__ == "__main__":
     np.random.seed(42)
     L = 10
-    x_samples = generate_xs(n=10000, L=L, lambdas=[1, 0.75, 0.5])
+    x_samples, v_arr = generate_xs(n=10000, L=L, lambdas=[1, 0.75, 0.5])
+    # x_samples, v_arr = generate_xs(n=100000, L=L, lambdas=[1])
     cov_hat = get_cov_hat(x_samples)
-    print("cov_hat: ", cov_hat)
 
     c_x_estimator = recover_c_x_estimator(roll_xs(x_samples))
 
     print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
-
