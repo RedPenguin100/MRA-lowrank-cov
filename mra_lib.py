@@ -25,13 +25,13 @@ def signal_power_spectrum_from_data(data_fft, sigma):
 def signal_trispectrum_from_data(data_fft):
     # TODO make efficient.
     N, L = data_fft.shape
-    trispectrum = np.zeros((L, L, L), dtype='complex128')
+    trispectrum = np.zeros((L, L, L), dtype=np.complex128)
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
                 data_trispectra = data_fft[:, k1] * data_fft[:, k2].conj() \
                                   * data_fft[:, k3] * data_fft[:, (k1 - k2 + k3) % L].conj()
-                trispectrum[k1, k2, k3] = np.mean(data_trispectra, axis=0, dtype='complex128')
+                trispectrum[k1, k2, k3] = np.mean(data_trispectra, axis=0, dtype=np.complex128)
 
     return trispectrum
 
@@ -39,7 +39,7 @@ def signal_trispectrum_from_data(data_fft):
 def signal_trispectrum_from_cov_hat(cov_hat):
     L, L2 = cov_hat.shape
     assert L == L2
-    trispectrum = np.zeros((L, L, L), dtype='complex128')
+    trispectrum = np.zeros((L, L, L), dtype=np.complex128)
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
@@ -81,7 +81,6 @@ def recover_c_x_estimator(data, sigma=0):
 
     data_fft = get_fft(data)
     p_y_estimator = signal_power_spectrum_from_data(data_fft, sigma)
-    print(p_y_estimator)
     t_y_estimator = signal_trispectrum_from_data(data_fft)
     G_arr = [np.outer(p_y_estimator, p_y_estimator)]
     constraints = []
@@ -118,17 +117,23 @@ def recover_c_x_estimator(data, sigma=0):
 
 def roll_xs(x_samples):
     N, L = x_samples.shape
+    rolled_samples = np.zeros(x_samples.shape, dtype=np.complex128)
     for i in range(N):
-        x_samples[i] = np.roll(x_samples[i], i % L)
+        rolled_samples[i] = np.roll(x_samples[i], i % L)
 
-    return x_samples
+    return rolled_samples
 
 
-def generate_xs(n):
-    v_1 = np.array([1, 2, 3, 4, 5], dtype='complex128')
-    lambda_1 = 0.5
-    x_samples = np.outer(np.random.normal(0, np.square(lambda_1) / 2, size=n) +
-                         np.random.normal(0, np.square(lambda_1) / 2, size=n) * 1j, v_1)
+def generate_xs(n, lambdas=None, L=5):
+    if lambdas is None:
+        lambdas = [1]
+    v_arr = []
+    x_samples = np.zeros((n, L), dtype=np.complex128)
+    for lamb in lambdas:
+        v_i = np.random.uniform(0, 1, L)
+        v_arr.append(v_i / np.linalg.norm(v_i))
+        x_samples += np.outer(np.random.normal(0, lamb / 2, size=n) +
+                              np.random.normal(0, lamb / 2, size=n) * 1j, v_i)
     return x_samples
 
 
@@ -144,7 +149,7 @@ def get_cov_hat(x_samples):
 
 def create_matrix_from_diagonals(diagonals):
     L, L = diagonals.shape
-    target_matrix = np.zeros((L, L), dtype='complex128')
+    target_matrix = np.zeros((L, L), dtype=np.complex128)
     for i in range(L):
         diagonal = diagonals[i]
         for j in range(L):
@@ -154,9 +159,7 @@ def create_matrix_from_diagonals(diagonals):
 
 def get_H_matrix(C_x, i, j):
     # TODO: roll is extremely inefficient, improve efficiency.
-    rotated_c_x = np.copy(C_x)
-    rotated_c_x = np.roll(rotated_c_x, -i, axis=0)
-    rotated_c_x = np.roll(rotated_c_x, -j, axis=1)
+    rotated_c_x = np.roll(C_x, (-i, -j), axis=(0, 1))
     return C_x * rotated_c_x.conj()  # Hadamard product
 
 
@@ -193,7 +196,7 @@ def get_V_matrix(H, r=1):
 
 def get_e_m(m, L):
     assert m < L
-    e_m = np.zeros(L)
+    e_m = np.zeros(L, dtype=np.complex128)
     e_m[m] = 1
     return e_m
 
@@ -202,36 +205,40 @@ def solve_ambiguities(C_x, r=1):
     L1, L = C_x.shape
     assert L1 == L
 
-    V_array = np.zeros((L, L, r ** 2))
+    V_array = np.zeros((L, L, r ** 2), dtype=np.complex128)
     for i in range(L):
-        V_array[i] = get_V_matrix(get_H_matrix(C_x, i, i), r=r)
-    Z_array = np.zeros((L, L ** 2, r ** 4))
+        H_ii = get_H_matrix(C_x, i, i)
+        V_array[i] = get_V_matrix(H_ii, r=r)
+
+    Z_array = np.zeros((L, L ** 2, r ** 4), dtype=np.complex128)
     for i in range(L):
-        Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
+        # Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
+        Z_array[i] = np.kron(V_array[(i + 1) % L].conj(), V_array[i])
     block_diag = scipy.linalg.block_diag(*list(Z_array))
 
-    M_array = np.zeros((L, L, L ** 2))
+    M_array = np.zeros((L, L, L ** 2), dtype=np.complex128)
     for m in range(L):
         e_m = get_e_m(m=m, L=L)
-        circulant = scipy.linalg.circulant(e_m).T.flatten(order='F')
+        circulant = scipy.linalg.circulant(e_m).flatten(order='F')
         for i in range(L):
-            M_array[i][m] = get_H_matrix(C_x, i, (i + 1) % L).flatten(order='F') * circulant
+            H_i_i1 = get_H_matrix(C_x, i, (i + 1) % L)
+            M_array[i][m] = H_i_i1.flatten(order='F') * circulant
     M_mat = np.hstack(M_array).T
     A = np.hstack((M_mat, -block_diag))
-    print(A.shape)
+    print((L ** 3, L + L * r ** 4))
     u, s, vh = np.linalg.svd(A)
     print("Singular values(last): ", s[-1])
     print("Singular values(before last): ", s[-2])
 
 
 if __name__ == "__main__":
-    x_samples = generate_xs(n=10000)
-    _, L = x_samples.shape
-    cov_matrix = np.mean(np.einsum('bi,bo->bio', x_samples, x_samples), axis=0)
+    np.random.seed(42)
+    L = 10
+    x_samples = generate_xs(n=10000, L=L, lambdas=[1, 0.75, 0.5])
     cov_hat = get_cov_hat(x_samples)
-
-    print("cov_hat: ", get_cov_hat(x_samples))
+    print("cov_hat: ", cov_hat)
 
     c_x_estimator = recover_c_x_estimator(roll_xs(x_samples))
 
     print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
+

@@ -1,5 +1,4 @@
 import pytest
-import numpy as np
 import scipy.linalg
 
 from mra_lib import *
@@ -73,8 +72,11 @@ def test_get_K():
 
 def test_solve_ambiguities():
     np.random.seed(42)
-    x_samples = generate_xs(10000)
-    _, L = x_samples.shape
-    # c_x = recover_c_x_estimator(roll_xs(x_samples))
+    lambdas = [1]
+    r = len(lambdas)
+    L = 4
+    x_samples = generate_xs(10000, L=L, lambdas=lambdas)
     c_x = recover_c_x_estimator(roll_xs(x_samples))
-    solve_ambiguities(c_x, r=1)
+    solve_ambiguities(c_x, r=r)
+    # cov_hat = get_cov_hat(x_samples)
+    # solve_ambiguities(cov_hat, r=r)
