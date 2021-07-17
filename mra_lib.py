@@ -235,15 +235,15 @@ def get_K_matrix(S):
     return K
 
 
-def get_V_matrix(H, r=1):
+def get_V_matrix(H, r_squared):
     """
     :param H: Hermitian or real symmetric matrix.
     """
     L1, L = H.shape
     assert L1 == L
-    assert r ** 2 < L
+    assert r_squared < L
     w, v = np.linalg.eig(H)
-    arg_max_eigvals = w.argsort()[-r ** 2:][::-1]
+    arg_max_eigvals = w.argsort()[-r_squared:][::-1]
     return v[:, arg_max_eigvals]
 
 
@@ -254,16 +254,20 @@ def get_e_m(m, L):
     return e_m
 
 
-def solve_ambiguities(C_x, r=1):
+def solve_ambiguities(C_x, r=None):
     L1, L = C_x.shape
     assert L1 == L
+    if r is None:
+        r_squared = L-1
+    else:
+        r_squared = r ** 2
 
-    V_array = np.zeros((L, L, r ** 2), dtype=np.complex128)
+    V_array = np.zeros((L, L, r_squared), dtype=np.complex128)
     for i in range(L):
         H_ii = get_H_matrix(C_x, i, i)
-        V_array[i] = get_V_matrix(H_ii, r=r)
+        V_array[i] = get_V_matrix(H_ii, r_squared=r_squared)
 
-    Z_array = np.zeros((L, L ** 2, r ** 4), dtype=np.complex128)
+    Z_array = np.zeros((L, L ** 2, r_squared ** 2), dtype=np.complex128)
     for i in range(L):
         # Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
         Z_array[i] = np.kron(V_array[(i + 1) % L].conj(), V_array[i])
