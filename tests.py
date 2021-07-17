@@ -72,20 +72,27 @@ def test_get_K():
 
 def test_solve_ambiguities():
     np.random.seed(42)
-    lambdas = [1]
+    lambdas = [1, 0.75, 0.5]
     r = len(lambdas)
-    L = 5
+    L = 10
     x_samples, v_arr = generate_xs(100000, L=L, lambdas=lambdas)
+    cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
     c_x = recover_c_x_estimator(roll_xs(x_samples))
-    cov_hat = get_cov_hat(v_arr)
-    cov_estimator = solve_ambiguities(cov_hat, r=r)
+    print(calculate_error_up_to_circulant(cov_hat, c_x))
 
+    cov_estimator = solve_ambiguities(c_x, r=r)
     error = np.inf
-    cov_mat = get_cov(v_arr)
+    cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
     cov_estimator_no_fft = reverse_cov_fft(cov_estimator)
-
     for i in range(L):
-        error = np.min((np.linalg.norm(cov_estimator_no_fft - cov_mat), error))
+        error = np.min((np.linalg.norm(cov_estimator_no_fft - cov_mat, ord='fro'), error))
         cov_mat = np.roll(cov_mat, (1,1), axis=(0, 1))
-    print(f"Final error: {error}")
+    print(f"Final error: {error / np.linalg.norm(cov_mat, ord='fro')}")
     print(calculate_error_up_to_circulant(cov_hat, cov_estimator))
+    err, phi = calculate_error_up_to_circulant(cov_hat, cov_estimator)
+    phi = np.insert(phi,0,0)
+    accurate_estimator = cov_estimator * scipy.linalg.circulant(np.exp(-1j * phi))
+    for i in range(L):
+        error = np.min((np.linalg.norm(reverse_cov_fft(accurate_estimator) - cov_mat, ord='fro'), error))
+        cov_mat = np.roll(cov_mat, (1, 1), axis=(0, 1))
+    print(f"Final error: {error / np.linalg.norm(cov_mat, ord='fro')}")

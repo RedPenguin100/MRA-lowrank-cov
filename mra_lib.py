@@ -138,13 +138,34 @@ def generate_xs(n, lambdas=None, L=5):
     v_arr = np.zeros((L, r), dtype=np.complex128)
     x_samples = np.zeros((n, L), dtype=np.complex128)
     for i, lamb in enumerate(lambdas):
-        # v_i = np.random.uniform(0, 1, L)
-        v_i = np.array([1, 2, 3, 4, 5], dtype=np.complex128)
-        # v_arr[:, i] = (v_i / np.linalg.norm(v_i))
+        v_i = np.random.uniform(0, 1, L)
         v_arr[:, i] = v_i
         x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
                               np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
     return x_samples, v_arr.T
+
+
+def get_cov_hat_from_v_arr(v_arr, lambdas=None):
+    r, L = v_arr.shape
+    if lambdas is None:
+        lambdas = [1] * r
+    assert len(lambdas) == r
+    v_arr = np.copy(v_arr)
+    for i in range(r):
+        v_arr[i, :] = lambdas[i] * v_arr[i, :]
+    fft_samples = get_fft(v_arr)
+    return np.sum(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
+
+
+def get_cov_mat_from_v_arr(v_arr, lambdas=None):
+    r, L = v_arr.shape
+    if lambdas is None:
+        lambdas = [1] * r
+    assert len(lambdas) == r
+    v_arr = np.copy(v_arr)
+    for i in range(r):
+        v_arr[i, :] = lambdas[i] * v_arr[i, :]
+    return np.sum(np.einsum('bi,bo->bio', v_arr, v_arr.conj()), axis=0)
 
 
 def get_cov_hat(x_samples):
@@ -239,34 +260,31 @@ def solve_ambiguities(C_x, r=1):
     M_mat = np.hstack(M_array).T
     A = np.hstack((M_mat, -block_diag))
     # print((L ** 3, L + L * r ** 4))
-    # u, s, vh = np.linalg.svd(A)
-    # print("Singular values(last): ", s[-1])
-    # print("Singular values(before last): ", s[-2])
-    b = np.dot(np.conj(A).T, A)
-    w, v = np.linalg.eig(b)
+    u, s, vh = np.linalg.svd(A)
+    print("Singular values(last): ", s[-1])
+    print("Singular values(before last): ", s[-2])
+    w, v = np.linalg.eig(A.conj().T @ A)
+
     V = v[:, np.argmin(w)]
+
     phi = np.zeros(L, dtype=np.complex128)
-    phi[0] = 0
-    k = 1
+    k = 0
     for m in range(1, L):
-        phi[m] = - np.sum(np.angle(V[0:m])) \
+        phi[m] = - np.sum(np.angle(V[1:m + 1])) \
                  + (m / L) * np.sum(np.angle(V[0:L])) \
                  + (2 * np.pi * k * m) / L
     print(phi)
-    # phi[:] = np.array([1, 4.084070449624307, 3.455751931134913, 2.8274333760446733, 2.199114857555278])
     phases = np.exp(-1j * phi)
     print(phases)
-    cov_estimator = C_x * scipy.linalg.circulant(phases).T
+    cov_estimator = C_x * scipy.linalg.circulant(phases)
     return cov_estimator
 
 
 if __name__ == "__main__":
     np.random.seed(42)
     L = 10
-    x_samples, v_arr = generate_xs(n=10000, L=L, lambdas=[1, 0.75, 0.5])
-    # x_samples, v_arr = generate_xs(n=100000, L=L, lambdas=[1])
-    cov_hat = get_cov_hat(x_samples)
-
+    lambdas = [1, 0.75, 0.5]
+    x_samples, v_arr = generate_xs(n=10000, L=L, lambdas=lambdas)
+    cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
     c_x_estimator = recover_c_x_estimator(roll_xs(x_samples))
-
     print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
