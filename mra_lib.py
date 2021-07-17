@@ -23,10 +23,10 @@ def diag_wrap(matrix, k):
     return np.concatenate((np.diag(matrix, k), np.diag(matrix, k - L)))
 
 
-def signal_power_spectrum_from_data(data_fft, sigma):
+def signal_power_spectrum_from_data(data_fft, sigma=0):
     N, L = data_fft.shape
     power_spectra = np.power(np.abs(data_fft), 2.0)
-    return np.mean(power_spectra, axis=0) - np.power(sigma, 2.0) * L
+    return np.mean(power_spectra, axis=0)
 
 
 def signal_trispectrum_from_data(data_fft):
@@ -43,10 +43,11 @@ def signal_trispectrum_from_data(data_fft):
     return trispectrum
 
 
-def signal_trispectrum_from_cov_hat(cov_hat):
+def signal_trispectrum_from_cov_hat(cov_hat, sigma=0):
     L, L2 = cov_hat.shape
     assert L == L2
     trispectrum = np.zeros((L, L, L), dtype=np.complex128)
+    cov_hat = np.copy(cov_hat) + L * np.diag(np.full(L, sigma ** 2))
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
@@ -83,11 +84,23 @@ def calculate_error_up_to_circulant(c_x_est, cov_fft):
     return np.sqrt(error), phi
 
 
+def calculate_error_up_to_shifts(cov_estimator, cov_real):
+    error = np.inf
+    L, L1 = cov_estimator.shape
+    assert L == L1
+    assert (L, L) == cov_real.shape
+
+    for i in range(L):
+        error = np.min((np.linalg.norm(cov_estimator - cov_real, ord='fro'), error))
+        cov_real = np.roll(cov_real, (1, 1), axis=(0, 1))
+    return error / np.linalg.norm(cov_real, ord='fro')
+
+
 def recover_c_x_estimator(data, sigma=0):
     N, L = data.shape
 
     data_fft = get_fft(data)
-    p_y_estimator = signal_power_spectrum_from_data(data_fft, sigma)
+    p_y_estimator = signal_power_spectrum_from_data(data_fft)
     t_y_estimator = signal_trispectrum_from_data(data_fft)
     G_arr = [np.outer(p_y_estimator, p_y_estimator)]
     constraints = []
@@ -118,7 +131,7 @@ def recover_c_x_estimator(data, sigma=0):
         largest_eigvec = v[:, np.argmax(w)]
         d_estimates.append(np.sqrt(largest_eigval) * largest_eigvec)
     d_estimates = np.array(d_estimates)
-    cov_estimator = create_matrix_from_diagonals(d_estimates)
+    cov_estimator = create_matrix_from_diagonals(d_estimates) - L * np.diag(np.full(L, sigma ** 2))
     return cov_estimator
 
 
@@ -129,6 +142,12 @@ def roll_xs(x_samples):
         rolled_samples[i] = np.roll(x_samples[i], i % L)
 
     return rolled_samples
+
+
+def noise_samples(x_samples, sigma=0):
+    N, L = x_samples.shape
+    return x_samples + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) \
+           + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) * 1j
 
 
 def generate_xs(n, lambdas=None, L=5):
@@ -259,23 +278,17 @@ def solve_ambiguities(C_x, r=1):
             M_array[i][m] = H_i_i1.flatten(order='F') * circulant
     M_mat = np.hstack(M_array).T
     A = np.hstack((M_mat, -block_diag))
-    # print((L ** 3, L + L * r ** 4))
-    u, s, vh = np.linalg.svd(A)
-    print("Singular values(last): ", s[-1])
-    print("Singular values(before last): ", s[-2])
     w, v = np.linalg.eig(A.conj().T @ A)
 
     V = v[:, np.argmin(w)]
-
+    # Recover phases
     phi = np.zeros(L, dtype=np.complex128)
     k = 0
     for m in range(1, L):
         phi[m] = - np.sum(np.angle(V[1:m + 1])) \
                  + (m / L) * np.sum(np.angle(V[0:L])) \
                  + (2 * np.pi * k * m) / L
-    print(phi)
     phases = np.exp(-1j * phi)
-    print(phases)
     cov_estimator = C_x * scipy.linalg.circulant(phases)
     return cov_estimator
 
