@@ -67,12 +67,6 @@ def test_get_H():
         assert pytest.approx(np.linalg.norm(h_ii - h_ii_estimator) / np.linalg.norm(h_ii), abs=1e-2) == 0
 
 
-def test_get_K():
-    symmetric_psd = np.array([[1, 2], [2, 5]])
-    K = get_K_matrix(symmetric_psd)
-    assert pytest.approx(np.linalg.norm(K @ K.conj().T - symmetric_psd)) == 0
-
-
 def test_solve_ambiguities_complex():
     lambdas = [1, 0.75, 0.5]
     r = len(lambdas)
