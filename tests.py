@@ -73,14 +73,35 @@ def test_get_K():
     assert pytest.approx(np.linalg.norm(K @ K.conj().T - symmetric_psd)) == 0
 
 
-def test_solve_ambiguities():
-    lambdas = [1, 0.75]
+def test_solve_ambiguities_complex():
+    lambdas = [1, 0.75, 0.5]
     r = len(lambdas)
     L = 10
     sigma = 0.1
-    x_samples, v_arr = generate_xs(2000, L=L, lambdas=lambdas)
+    n = 10000
+    x_samples, v_arr = generate_xs(n, L=L, lambdas=lambdas)
     c_x = recover_c_x_estimator(noise_samples(roll_xs(x_samples), sigma), sigma)
-    cov_estimator = solve_ambiguities(c_x)
+    cov_estimator = solve_ambiguities(c_x, r=r)
+
+    cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
+    cov_estimator_no_fft = reverse_cov_fft(cov_estimator)
+    error = calculate_error_up_to_shifts(cov_mat, cov_estimator_no_fft)
+    print(f"Final error: {error}")
+    assert pytest.approx(error, abs=1e-1) == 0
+
+
+def test_solve_ambiguities_real():
+    lambdas = [1, 0.75, 0.5]
+    r = len(lambdas)
+    L = 10
+    sigma = 0.1
+    n = 1000
+    num_type = np.longdouble
+    x_samples, v_arr = generate_xs(n, L=L, lambdas=lambdas, num_type=num_type)
+    c_x = recover_c_x_estimator(noise_samples(roll_xs(x_samples), sigma), sigma, num_type=num_type)
+
+    print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))
+    cov_estimator = solve_ambiguities(c_x, r=r)
 
     cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
     cov_estimator_no_fft = reverse_cov_fft(cov_estimator)

@@ -96,7 +96,7 @@ def calculate_error_up_to_shifts(cov_estimator, cov_real):
     return error / np.linalg.norm(cov_real, ord='fro')
 
 
-def recover_c_x_estimator(data, sigma=0):
+def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     N, L = data.shape
 
     data_fft = get_fft(data)
@@ -111,13 +111,21 @@ def recover_c_x_estimator(data, sigma=0):
     for k1 in range(L):
         for k2 in range(L):
             for m in range(L):
-                # noinspection PyTypeChecker
-                expression += cp.power(cp.abs(
-                    t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
-                    - G_arr[(k2 - k1) % L][k1, (k1 + m) % L]
-                    - G_arr[m][k1, k2]
-                    # - G_arr[(k1+k2+m) % L] [(-k2) % L, (-k2 -m) % L]
-                ), 2)
+                if num_type in [np.complex, np.complex128]:
+                    # noinspection PyTypeChecker
+                    expression += cp.power(cp.abs(
+                        t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
+                        - G_arr[(k2 - k1) % L][k1, (k1 + m) % L]
+                        - G_arr[m][k1, k2]
+                    ), 2)
+                if num_type in [np.double, np.longdouble, np.float64]:
+                    # noinspection PyTypeChecker
+                    expression += cp.power(cp.abs(
+                        t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
+                        - G_arr[(k2 - k1) % L][k1, (k1 + m) % L]
+                        - G_arr[m][k1, k2]
+                        - G_arr[(k1 + k2 + m) % L][(-k2) % L, (-k2 - m) % L]
+                    ), 2)
     obj = cp.Minimize(expression)
     problem = cp.Problem(obj, constraints=constraints)
     problem.solve()
@@ -150,17 +158,20 @@ def noise_samples(x_samples, sigma=0):
            + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) * 1j
 
 
-def generate_xs(n, lambdas=None, L=5):
+def generate_xs(n, lambdas=None, L=5, num_type=np.complex128):
     if lambdas is None:
         lambdas = [1]
     r = len(lambdas)
-    v_arr = np.zeros((L, r), dtype=np.complex128)
-    x_samples = np.zeros((n, L), dtype=np.complex128)
+    v_arr = np.zeros((L, r), dtype=num_type)
+    x_samples = np.zeros((n, L), dtype=num_type)
     for i, lamb in enumerate(lambdas):
         v_i = np.random.uniform(0, 1, L)
         v_arr[:, i] = v_i
-        x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
-                              np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
+        if num_type in [np.complex, np.complex128]:
+            x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
+                                  np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
+        if num_type in [np.double, np.longdouble, np.float64]:
+            x_samples += np.outer(np.random.normal(0, lamb, size=n), v_i)
     return x_samples, v_arr.T
 
 
@@ -241,7 +252,6 @@ def get_V_matrix(H, r_squared):
     """
     L1, L = H.shape
     assert L1 == L
-    assert r_squared < L
     w, v = np.linalg.eig(H)
     arg_max_eigvals = w.argsort()[-r_squared:][::-1]
     return v[:, arg_max_eigvals]
@@ -258,7 +268,7 @@ def solve_ambiguities(C_x, r=None):
     L1, L = C_x.shape
     assert L1 == L
     if r is None:
-        r_squared = L-1
+        r_squared = L - 1
     else:
         r_squared = r ** 2
 
