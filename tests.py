@@ -46,9 +46,9 @@ def test_error_circulant_distortion_no_phi():
 
 
 def test_trispectrum_identity():
-    x_samples, v_arr = generate_xs(100000)
-    sigma = 0.5
-    x_samples_fft = get_fft(noise_samples(roll_xs(x_samples), sigma=sigma))
+    x_samples, v_arr = default_x_samples_generation(10000)
+    sigma = 0.2
+    x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples), sigma=sigma))
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
     tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(v_arr), sigma=sigma)
     assert pytest.approx(np.mean(tri_from_data / tri_from_cov), abs=1e-2) == 1
@@ -57,10 +57,10 @@ def test_trispectrum_identity():
 def test_get_H():
     lambdas = [1]
     L = 5
-    x_samples, v_arr = generate_xs(200000, L=L, lambdas=lambdas)
+    x_samples, v_arr = default_x_samples_generation(200000, L=L, lambdas=lambdas)
     _, L = x_samples.shape
     cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
-    c_x = recover_c_x_estimator(roll_xs(x_samples))
+    c_x = recover_c_x_estimator(default_sample_shuffle(x_samples))
     for i in range(L):
         h_ii_estimator = get_H_matrix(c_x, i, i)
         h_ii = get_H_matrix(cov_hat, i, i)
@@ -79,8 +79,10 @@ def test_solve_ambiguities_complex():
     L = 10
     sigma = 0.1
     n = 10000
-    x_samples, v_arr = generate_xs(n, L=L, lambdas=lambdas)
-    c_x = recover_c_x_estimator(noise_samples(roll_xs(x_samples), sigma), sigma)
+    x_samples, v_arr = default_x_samples_generation(n, L=L, lambdas=lambdas)
+    c_x = recover_c_x_estimator(default_sample_noising(default_sample_shuffle(x_samples), sigma), sigma)
+    print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))
+
     cov_estimator = solve_ambiguities(c_x, r=r)
 
     cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
@@ -97,8 +99,10 @@ def test_solve_ambiguities_real():
     sigma = 0.1
     n = 1000
     num_type = np.longdouble
-    x_samples, v_arr = generate_xs(n, L=L, lambdas=lambdas, num_type=num_type)
-    c_x = recover_c_x_estimator(noise_samples(roll_xs(x_samples), sigma), sigma, num_type=num_type)
+    x_samples, v_arr = default_x_samples_generation(n, L=L, lambdas=lambdas, num_type=num_type)
+    c_x = recover_c_x_estimator(default_sample_noising(default_sample_shuffle(x_samples),
+                                                       sigma, num_type=num_type),
+                                sigma, num_type=num_type)
 
     print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))
     cov_estimator = solve_ambiguities(c_x, r=r)

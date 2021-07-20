@@ -5,6 +5,33 @@ import scipy.optimize
 
 np.set_printoptions(linewidth=np.inf)
 
+REAL_TYPES = [np.double, np.longdouble, np.float64]
+COMPLEX_TYPES = [np.complex, np.complex128]
+
+
+def create_matrix_from_diagonals(diagonals):
+    """
+    Function takes L diagonals of dimension L and creates
+    a matrix where the ith diagonal is the ith main diagonal
+    of the new matrix.
+    """
+    L, L = diagonals.shape
+    target_matrix = np.zeros((L, L), dtype=np.complex128)
+    for i in range(L):
+        diagonal = diagonals[i]
+        for j in range(L):
+            target_matrix[j][(j + i) % L] = diagonal[j]
+    return target_matrix
+
+
+def diag_wrap(matrix, k):
+    """
+    Function returns the kth "main wrapped diagonal" of a square matrix.
+    """
+    L, L2 = matrix.shape
+    assert L == L2
+    return np.concatenate((np.diag(matrix, k), np.diag(matrix, k - L)))
+
 
 def get_fft(x):
     return np.fft.fft(x)
@@ -17,20 +44,19 @@ def reverse_cov_fft(cov_hat):
     return np.fft.ifft(np.fft.ifft(cov_hat.T).conj().T)
 
 
-def diag_wrap(matrix, k):
-    L, L2 = matrix.shape
-    assert L == L2
-    return np.concatenate((np.diag(matrix, k), np.diag(matrix, k - L)))
-
-
-def signal_power_spectrum_from_data(data_fft, sigma=0):
-    N, L = data_fft.shape
+def signal_power_spectrum_from_data(data_fft):
+    """
+    :note: sigma is accounted for in different part of the algorithm.
+    """
     power_spectra = np.power(np.abs(data_fft), 2.0)
     return np.mean(power_spectra, axis=0)
 
 
 def signal_trispectrum_from_data(data_fft):
-    # TODO make efficient.
+    """
+    :note: the algorithm is extremely inefficient due to the lack of utilizing
+    NumPy's power.
+    """
     N, L = data_fft.shape
     trispectrum = np.zeros((L, L, L), dtype=np.complex128)
     for k1 in range(L):
@@ -44,6 +70,10 @@ def signal_trispectrum_from_data(data_fft):
 
 
 def signal_trispectrum_from_cov_hat(cov_hat, sigma=0):
+    """
+    :note: if there is noise (sigma), then we account for it in the
+    main diagonal of cov_hat before calculating the tri-spectrum.
+    """
     L, L2 = cov_hat.shape
     assert L == L2
     trispectrum = np.zeros((L, L, L), dtype=np.complex128)
@@ -58,15 +88,16 @@ def signal_trispectrum_from_cov_hat(cov_hat, sigma=0):
 
 def calculate_error_up_to_circulant(c_x_est, cov_fft):
     """
-    Calculates the error between C_x estimator and FFT of the original Covariance matrix
+    Calculates the error between C_x estimator and FFT of the original covariance matrix
     disregarding the circulant angles multiplication.
+    May be viewed as error calculation for algorithm 1.
     """
-    # TODO: make efficient
     L, L2 = cov_fft.shape
     assert L == L2
 
     solutions = []
 
+    # Note: in i==0 the angle is 0 and so no reason to account it here.
     for i in range(1, L):
         def _objective(phi):
             return np.linalg.norm(diag_wrap(c_x_est, k=i) - diag_wrap(cov_fft, k=i) * np.exp(1j * phi)) ** 2
@@ -79,12 +110,15 @@ def calculate_error_up_to_circulant(c_x_est, cov_fft):
     for sol in solutions:
         error += sol.fun
         phi.append(sol.x)
-    # Accounting for the 1 in the circulant matrix
+    # Accounting for the error of the case where the angle is 0.
     error += np.linalg.norm(np.diag(c_x_est) - np.diag(cov_fft)) ** 2
     return np.sqrt(error), phi
 
 
 def calculate_error_up_to_shifts(cov_estimator, cov_real):
+    """
+    Function calculates the error of algorithms 1 + 2.
+    """
     error = np.inf
     L, L1 = cov_estimator.shape
     assert L == L1
@@ -97,6 +131,9 @@ def calculate_error_up_to_shifts(cov_estimator, cov_real):
 
 
 def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
+    """
+    Implementation of algorithm 1 in the paper.
+    """
     N, L = data.shape
 
     data_fft = get_fft(data)
@@ -111,14 +148,14 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     for k1 in range(L):
         for k2 in range(L):
             for m in range(L):
-                if num_type in [np.complex, np.complex128]:
+                if num_type in COMPLEX_TYPES:
                     # noinspection PyTypeChecker
                     expression += cp.power(cp.abs(
                         t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
                         - G_arr[(k2 - k1) % L][k1, (k1 + m) % L]
                         - G_arr[m][k1, k2]
                     ), 2)
-                if num_type in [np.double, np.longdouble, np.float64]:
+                elif num_type in REAL_TYPES:
                     # noinspection PyTypeChecker
                     expression += cp.power(cp.abs(
                         t_y_estimator[k1 % L, (k1 + m) % L, (k2 + m) % L]
@@ -126,6 +163,8 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
                         - G_arr[m][k1, k2]
                         - G_arr[(k1 + k2 + m) % L][(-k2) % L, (-k2 - m) % L]
                     ), 2)
+                else:
+                    raise ValueError(f"Invalid num_type: {num_type}")
     obj = cp.Minimize(expression)
     problem = cp.Problem(obj, constraints=constraints)
     problem.solve()
@@ -143,7 +182,7 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     return cov_estimator
 
 
-def roll_xs(x_samples):
+def default_sample_shuffle(x_samples):
     N, L = x_samples.shape
     rolled_samples = np.zeros(x_samples.shape, dtype=np.complex128)
     for i in range(N):
@@ -152,13 +191,18 @@ def roll_xs(x_samples):
     return rolled_samples
 
 
-def noise_samples(x_samples, sigma=0):
+def default_sample_noising(x_samples, sigma=0, num_type=np.complex128):
     N, L = x_samples.shape
-    return x_samples + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) \
-           + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) * 1j
+    if num_type in COMPLEX_TYPES:
+        return x_samples + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) \
+               + np.random.normal(0, sigma / np.sqrt(2),
+                                  size=(N, L)) * 1j
+    elif num_type in REAL_TYPES:
+        return x_samples + np.random.normal(0, sigma, size=(N, L))
+    raise ValueError(f"Invalid num_type: {num_type}")
 
 
-def generate_xs(n, lambdas=None, L=5, num_type=np.complex128):
+def default_x_samples_generation(n, lambdas=None, L=5, num_type=np.complex128):
     if lambdas is None:
         lambdas = [1]
     r = len(lambdas)
@@ -167,12 +211,38 @@ def generate_xs(n, lambdas=None, L=5, num_type=np.complex128):
     for i, lamb in enumerate(lambdas):
         v_i = np.random.uniform(0, 1, L)
         v_arr[:, i] = v_i
-        if num_type in [np.complex, np.complex128]:
+        if num_type in COMPLEX_TYPES:
             x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
                                   np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
-        if num_type in [np.double, np.longdouble, np.float64]:
+        elif num_type in REAL_TYPES:
             x_samples += np.outer(np.random.normal(0, lamb, size=n), v_i)
+        else:
+            raise ValueError(f"Invalid num_type: {num_type}")
     return x_samples, v_arr.T
+
+
+def get_cov(x_samples):
+    return np.mean(np.einsum('bi,bo->bio', x_samples, x_samples.conj()), axis=0)
+
+
+def get_cov_hat(x_samples):
+    """
+    Cov hat is the covariance of the fourier transformed vectors,
+    not the fourier transform of the covariance matrix.
+    """
+    fft_samples = get_fft(x_samples)
+    return get_cov(fft_samples)
+
+
+def get_cov_mat_from_v_arr(v_arr, lambdas=None):
+    r, L = v_arr.shape
+    if lambdas is None:
+        lambdas = [1] * r
+    assert len(lambdas) == r
+    v_arr = np.copy(v_arr)
+    for i in range(r):
+        v_arr[i, :] = lambdas[i] * v_arr[i, :]
+    return np.sum(np.einsum('bi,bo->bio', v_arr, v_arr.conj()), axis=0)
 
 
 def get_cov_hat_from_v_arr(v_arr, lambdas=None):
@@ -187,63 +257,10 @@ def get_cov_hat_from_v_arr(v_arr, lambdas=None):
     return np.sum(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
 
 
-def get_cov_mat_from_v_arr(v_arr, lambdas=None):
-    r, L = v_arr.shape
-    if lambdas is None:
-        lambdas = [1] * r
-    assert len(lambdas) == r
-    v_arr = np.copy(v_arr)
-    for i in range(r):
-        v_arr[i, :] = lambdas[i] * v_arr[i, :]
-    return np.sum(np.einsum('bi,bo->bio', v_arr, v_arr.conj()), axis=0)
-
-
-def get_cov_hat(x_samples):
-    """
-    Cov hat is the covariance of the fourier transformed vectors,
-    not the fourier transform of the covariance matrix.
-    """
-    fft_samples = get_fft(x_samples)
-    return np.mean(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
-
-
-def get_cov(x_samples):
-    return np.mean(np.einsum('bi,bo->bio', x_samples, x_samples.conj()), axis=0)
-
-
-def create_matrix_from_diagonals(diagonals):
-    L, L = diagonals.shape
-    target_matrix = np.zeros((L, L), dtype=np.complex128)
-    for i in range(L):
-        diagonal = diagonals[i]
-        for j in range(L):
-            target_matrix[j][(j + i) % L] = diagonal[j]
-    return target_matrix
-
-
 def get_H_matrix(C_x, i, j):
     # TODO: roll is extremely inefficient, improve efficiency.
     rotated_c_x = np.roll(C_x, (-i, -j), axis=(0, 1))
     return C_x * rotated_c_x.conj()  # Hadamard product
-
-
-def get_S_matrix(X):
-    L1, L = X.shape
-    assert L1 == L
-    S = np.zeros((L ** 2, L ** 2))
-    for i in range(L):
-        for j in range(L):
-            S[L * i:L * i + L, L * j:L * j + L] = get_H_matrix(X, i, j)
-    return S
-
-
-def get_K_matrix(S):
-    L_squared, L_squared2 = S.shape
-    assert L_squared == L_squared2
-    w, v = np.linalg.eig(S)
-    # v @ np.diag(w) @ v.T
-    K = v @ np.sqrt(np.diag(w))
-    return K
 
 
 def get_V_matrix(H, r_squared):
@@ -258,6 +275,12 @@ def get_V_matrix(H, r_squared):
 
 
 def get_e_m(m, L):
+    """
+    Given m, L, return a vector of length L with
+    1 in the mth place :
+    Content: (0,...,0,1,0,...,0)
+    Indices:  0.......m,.....L-1
+    """
     assert m < L
     e_m = np.zeros(L, dtype=np.complex128)
     e_m[m] = 1
@@ -265,6 +288,9 @@ def get_e_m(m, L):
 
 
 def solve_ambiguities(C_x, r=None):
+    """
+    Implementation of algorithm 2 in the paper.
+    """
     L1, L = C_x.shape
     assert L1 == L
     if r is None:
@@ -311,7 +337,7 @@ if __name__ == "__main__":
     np.random.seed(42)
     L = 10
     lambdas = [1, 0.75, 0.5]
-    x_samples, v_arr = generate_xs(n=10000, L=L, lambdas=lambdas)
+    x_samples, v_arr = default_x_samples_generation(n=10000, L=L, lambdas=lambdas)
     cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
-    c_x_estimator = recover_c_x_estimator(roll_xs(x_samples))
+    c_x_estimator = recover_c_x_estimator(default_sample_shuffle(x_samples))
     print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
