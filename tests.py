@@ -45,13 +45,29 @@ def test_error_circulant_distortion_no_phi():
     assert pytest.approx(phi[0]) == np.pi / 4
 
 
-def test_trispectrum_identity():
-    x_samples, v_arr = default_x_samples_generation(10000)
-    sigma = 0.2
-    x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples), sigma=sigma))
+@pytest.mark.parametrize('setting,error', [
+    (Setting(n=1000000, L=3, r=1, num_type=np.longdouble, sigma=0), 1e-1),
+    (Setting(n=1000000, L=3, r=1, num_type=np.complex128, sigma=0), 1e-1)
+])
+def test_trispectrum_identity(setting, error):
+    lambdas = np.array([1])
+    vec = np.array([1, 2, 3])
+    vec = vec / np.linalg.norm(vec)
+    signal_vectors = SignalVectors(vectors=np.array([vec], dtype=setting.num_type))
+    underlying_signal = UnderlyingSignal(signal_vectors=signal_vectors,
+                                         signal_distribution_sample=SignalDistributionSample(
+                                             lambdas=lambdas * setting.r, setting=setting))
+    x_samples = underlying_signal.x_samples
+    v_arr = underlying_signal.signal_vectors.vectors
+    sigma = setting.sigma
+
+    x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples, num_type=setting.num_type),
+                                                   sigma=sigma))
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
-    tri_from_cov = signal_trispectrum_from_cov_hat(get_cov_hat(v_arr), sigma=sigma)
-    assert pytest.approx(np.mean(tri_from_data / tri_from_cov), abs=1e-2) == 1
+    very_real_cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas=lambdas)
+    tri_from_cov = signal_trispectrum_from_cov_hat(very_real_cov_hat, sigma=sigma, num_type=setting.num_type)
+    ratio = np.mean(tri_from_data / tri_from_cov)
+    assert pytest.approx(np.linalg.norm(tri_from_data - tri_from_cov), abs=error) == 0
 
 
 def test_get_H():
@@ -72,7 +88,7 @@ def test_solve_ambiguities_complex():
     r = len(lambdas)
     L = 10
     sigma = 0.1
-    n = 10000
+    n = 1000
     x_samples, v_arr = default_x_samples_generation(n, L=L, lambdas=lambdas)
     c_x = recover_c_x_estimator(default_sample_noising(default_sample_shuffle(x_samples), sigma), sigma)
     print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))

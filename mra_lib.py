@@ -5,7 +5,7 @@ import scipy.optimize
 
 np.set_printoptions(linewidth=np.inf)
 
-REAL_TYPES = [np.double, np.longdouble, np.float64]
+REAL_TYPES = [np.double, np.longdouble, np.float64, np.float128]
 COMPLEX_TYPES = [np.complex, np.complex128]
 
 
@@ -20,6 +20,10 @@ class Setting:
             raise ValueError(f"Error: r={self.r} cannot be larger than L={self.L}")
         if self.sigma < 0:
             raise ValueError(f"Error: sigma={self.sigma} cannot be negative!")
+
+    @staticmethod
+    def get_default():
+        return Setting(n=10000, L=5, r=1, sigma=0, num_type=np.complex128)
 
 
 class SignalVectors:
@@ -43,16 +47,18 @@ class SignalVectors:
 
 class SignalDistributionSample:
     def __init__(self, lambdas, setting: Setting, generation_method=None):
-        self.validate(lambdas, setting)
+        self.lambdas = lambdas
+        self.setting = setting
+        self.validate(lambdas, self.setting)
         self.mus = np.zeros(setting.r)
-
         if generation_method is None or generation_method == 'default':
             self.distribution = 'normal'
             if setting.num_type in COMPLEX_TYPES:
-                self.sample = np.random.normal(self.mus, lambdas / np.sqrt(2), size=(setting.n, setting.r)) + \
-                              np.random.normal(self.mus, lambdas / np.sqrt(2), size=(setting.n, setting.r)) * 1j
+                self.sample = np.random.normal(self.mus, np.sqrt(lambdas) / np.sqrt(2), size=(setting.n, setting.r)) + \
+                              np.random.normal(self.mus, np.sqrt(lambdas) / np.sqrt(2),
+                                               size=(setting.n, setting.r)) * 1j
             elif setting.num_type in REAL_TYPES:
-                self.sample = np.random.normal(self.mus, lambdas, size=(setting.n, setting.r))
+                self.sample = np.random.normal(self.mus, np.sqrt(lambdas), size=(setting.n, setting.r))
             else:
                 raise ValueError(f"Bad num_type given! num_type={setting.num_type}")
         else:
@@ -60,17 +66,43 @@ class SignalDistributionSample:
 
     @staticmethod
     def validate(lambdas, setting: Setting):
+        if setting is None:
+            raise ValueError("Setting cannot be none when generating SignalDistributionSample.")
         if setting.r != len(lambdas):
             raise ValueError(f"Inconsistent lambda values: {len(lambdas)} and r in setting: {setting.r}")
 
 
-def default_x_samples_generation(n, lambdas=None, L=5, num_type=np.complex128):
-    if lambdas is None:
-        setting = Setting(n=n, L=L, r=1, sigma=1, num_type=num_type)
-        distribution_sample = SignalDistributionSample(lambdas=np.array([1]), setting=setting)
-    else:
-        setting = Setting(n=n, L=L, r=len(lambdas), sigma=1, num_type=num_type)
-        distribution_sample = SignalDistributionSample(lambdas=lambdas, setting=setting)
+class UnderlyingSignal:
+    def __init__(self, signal_distribution_sample: SignalDistributionSample,
+                 signal_vectors: SignalVectors = None,
+                 x_samples=None):
+
+        self.signal_distribution_sample = signal_distribution_sample
+        self.setting = signal_distribution_sample.setting
+        self.signal_vectors = signal_vectors if signal_vectors is not None else SignalVectors(setting=self.setting)
+
+        # If we are just given the underlying signal, we will take it.
+        if x_samples is not None:
+            self.x_samples = x_samples
+            return
+
+        generated_x_samples = np.zeros((self.setting.n, self.setting.L), dtype=self.setting.num_type)
+        # TODO: make efficient
+        for i in range(self.setting.r):
+            v_i = self.signal_vectors.vectors[i, :]
+            generated_x_samples += np.outer(self.signal_distribution_sample.sample[:, i], v_i)
+        self.x_samples = generated_x_samples
+
+    def get_cov_hat(self):
+        lambdas = self.signal_distribution_sample.lambdas
+        fft_complete_underlying = get_fft((lambdas * self.signal_vectors.vectors.T))
+        return np.sum(np.einsum('bi,bo->bio',
+                                fft_complete_underlying, fft_complete_underlying.conj()), axis=0)
+
+
+def default_x_samples_generation(n, lambdas, L=5, num_type=np.complex128):
+    setting = Setting(n=n, L=L, r=len(lambdas), sigma=1, num_type=num_type)
+    distribution_sample = SignalDistributionSample(lambdas=lambdas, setting=setting)
 
     signal_vectors = SignalVectors(setting=setting)
     x_samples = np.zeros((n, L), dtype=num_type)
@@ -142,7 +174,7 @@ def signal_trispectrum_from_data(data_fft):
     return trispectrum
 
 
-def signal_trispectrum_from_cov_hat(cov_hat, sigma=0):
+def signal_trispectrum_from_cov_hat(cov_hat, sigma=0, num_type=np.complex128):
     """
     :note: if there is noise (sigma), then we account for it in the
     main diagonal of cov_hat before calculating the tri-spectrum.
@@ -154,8 +186,16 @@ def signal_trispectrum_from_cov_hat(cov_hat, sigma=0):
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
-                trispectrum[k1, k2, k3] = cov_hat[k1, k2] * cov_hat[(k3 - k2 + k1) % L, k3].conj() \
-                                          + cov_hat[k1, (k3 - k2 + k1) % L] * cov_hat[k2, k3].conj()
+                if num_type in COMPLEX_TYPES:
+                    trispectrum[k1, k2, k3] = cov_hat[k1, k2] * cov_hat[(k3 - k2 + k1) % L, k3].conj() \
+                                              + cov_hat[k1, (k3 - k2 + k1) % L] * cov_hat[k2, k3].conj()
+                elif num_type in REAL_TYPES:
+                    trispectrum[k1, k2, k3] = cov_hat[k1, k2] * cov_hat[(k3 - k2 + k1) % L, k3].conj() \
+                                              + cov_hat[k1, (k3 - k2 + k1) % L] * cov_hat[k2, k3].conj() \
+                                              + cov_hat[k1, ((-k3) + L) % L] * cov_hat[
+                                                  k2, (-(k3 - k2 + k1) + L) % L].conj()
+                else:
+                    raise ValueError(f"Value error: unknown num_type={num_type}")
     return trispectrum
 
 
@@ -255,9 +295,9 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     return cov_estimator
 
 
-def default_sample_shuffle(x_samples):
+def default_sample_shuffle(x_samples, num_type=np.complex128):
     N, L = x_samples.shape
-    rolled_samples = np.zeros(x_samples.shape, dtype=np.complex128)
+    rolled_samples = np.zeros(x_samples.shape, dtype=num_type)
     for i in range(N):
         rolled_samples[i] = np.roll(x_samples[i], i % L)
 
@@ -288,27 +328,30 @@ def get_cov_hat(x_samples):
     return get_cov(fft_samples)
 
 
-def get_cov_mat_from_v_arr(v_arr, lambdas=None):
-    r, L = v_arr.shape
-    if lambdas is None:
-        lambdas = [1] * r
-    assert len(lambdas) == r
-    v_arr = np.copy(v_arr)
-    for i in range(r):
-        v_arr[i, :] = lambdas[i] * v_arr[i, :]
-    return np.sum(np.einsum('bi,bo->bio', v_arr, v_arr.conj()), axis=0)
-
-
 def get_cov_hat_from_v_arr(v_arr, lambdas=None):
     r, L = v_arr.shape
     if lambdas is None:
         lambdas = [1] * r
     assert len(lambdas) == r
-    v_arr = np.copy(v_arr)
+    v_arr2 = np.copy(v_arr)
+    lambdas_sqrt = np.sqrt(lambdas)
     for i in range(r):
-        v_arr[i, :] = lambdas[i] * v_arr[i, :]
-    fft_samples = get_fft(v_arr)
+        v_arr2[i, :] = lambdas_sqrt[i] * v_arr[i, :]
+    fft_samples = get_fft(v_arr2)
     return np.sum(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
+
+
+def get_cov_mat_from_v_arr(v_arr, lambdas=None):
+    r, L = v_arr.shape
+    if lambdas is None:
+        lambdas = [1] * r
+    assert len(lambdas) == r
+    v_arr2 = np.copy(v_arr)
+    sqrt_lambdas = np.sqrt(lambdas)
+    for i in range(r):
+        a = sqrt_lambdas[i] * v_arr[i, :]
+        v_arr2[i, :] = a
+    return np.sum(np.einsum('bi,bo->bio', v_arr2, v_arr2.conj()), axis=0)
 
 
 def get_H_matrix(C_x, i, j):
