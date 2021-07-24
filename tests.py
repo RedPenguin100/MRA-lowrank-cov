@@ -58,67 +58,49 @@ def test_trispectrum_identity(setting, error):
                                          signal_distribution_sample=SignalDistributionSample(
                                              lambdas=lambdas * setting.r, setting=setting))
     x_samples = underlying_signal.x_samples
-    v_arr = underlying_signal.signal_vectors.vectors
     sigma = setting.sigma
 
     x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples, num_type=setting.num_type),
                                                    sigma=sigma))
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
-    very_real_cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas=lambdas)
-    tri_from_cov = signal_trispectrum_from_cov_hat(very_real_cov_hat, sigma=sigma, num_type=setting.num_type)
-    ratio = np.mean(tri_from_data / tri_from_cov)
+    tri_from_cov = signal_trispectrum_from_cov_hat(underlying_signal.get_cov_hat(), sigma=sigma,
+                                                   num_type=setting.num_type)
     assert pytest.approx(np.linalg.norm(tri_from_data - tri_from_cov), abs=error) == 0
 
 
 def test_get_H():
     lambdas = [1]
-    L = 5
-    x_samples, v_arr = default_x_samples_generation(200000, L=L, lambdas=lambdas)
-    _, L = x_samples.shape
-    cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
+    setting = Setting(n=200000, L=5, r=len(lambdas))
+    signal_ds = SignalDistributionSample(lambdas=lambdas, setting=setting)
+    underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
+    x_samples = underlying_signal.x_samples
     c_x = recover_c_x_estimator(default_sample_shuffle(x_samples))
-    for i in range(L):
+    for i in range(setting.L):
         h_ii_estimator = get_H_matrix(c_x, i, i)
-        h_ii = get_H_matrix(cov_hat, i, i)
+        h_ii = get_H_matrix(underlying_signal.get_cov_hat(), i, i)
         assert pytest.approx(np.linalg.norm(h_ii - h_ii_estimator) / np.linalg.norm(h_ii), abs=1e-2) == 0
 
 
-def test_solve_ambiguities_complex():
+@pytest.mark.parametrize('setting,error', [
+    (Setting(n=1000, r=None, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
+    (Setting(n=2000, r=None, L=10, sigma=0.1, num_type=np.longdouble), 1e-1),
+])
+def test_solve_ambiguities_complex(setting, error):
     lambdas = [1, 0.75, 0.5]
-    r = len(lambdas)
-    L = 10
-    sigma = 0.1
-    n = 1000
-    x_samples, v_arr = default_x_samples_generation(n, L=L, lambdas=lambdas)
-    c_x = recover_c_x_estimator(default_sample_noising(default_sample_shuffle(x_samples), sigma), sigma)
-    print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))
+    setting.r = len(lambdas)
+    print(setting)
 
-    cov_estimator = solve_ambiguities(c_x, r=r)
+    signal_ds = SignalDistributionSample(lambdas=lambdas, setting=setting)
+    underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
+    x_samples = underlying_signal.x_samples
+    c_x = recover_c_x_estimator(
+        default_sample_noising(default_sample_shuffle(x_samples), setting.sigma, num_type=setting.num_type),
+        setting.sigma, num_type=setting.num_type)
+    print(calculate_error_up_to_circulant(c_x, underlying_signal.get_cov_hat()))
 
-    cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
+    cov_estimator = solve_ambiguities(c_x, r=len(lambdas))
+
     cov_estimator_no_fft = reverse_cov_fft(cov_estimator)
-    error = calculate_error_up_to_shifts(cov_mat, cov_estimator_no_fft)
-    print(f"Final error: {error}")
-    assert pytest.approx(error, abs=1e-1) == 0
-
-
-def test_solve_ambiguities_real():
-    lambdas = [1, 0.75, 0.5]
-    r = len(lambdas)
-    L = 10
-    sigma = 0.1
-    n = 1000
-    num_type = np.longdouble
-    x_samples, v_arr = default_x_samples_generation(n, L=L, lambdas=lambdas, num_type=num_type)
-    c_x = recover_c_x_estimator(default_sample_noising(default_sample_shuffle(x_samples),
-                                                       sigma, num_type=num_type),
-                                sigma, num_type=num_type)
-
-    print(calculate_error_up_to_circulant(c_x, get_cov_hat_from_v_arr(v_arr, lambdas)))
-    cov_estimator = solve_ambiguities(c_x, r=r)
-
-    cov_mat = get_cov_mat_from_v_arr(v_arr, lambdas)
-    cov_estimator_no_fft = reverse_cov_fft(cov_estimator)
-    error = calculate_error_up_to_shifts(cov_mat, cov_estimator_no_fft)
+    error = calculate_error_up_to_shifts(underlying_signal.get_cov_mat(), cov_estimator_no_fft)
     print(f"Final error: {error}")
     assert pytest.approx(error, abs=1e-1) == 0

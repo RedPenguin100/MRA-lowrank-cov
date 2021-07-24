@@ -2,6 +2,7 @@ import numpy as np
 import cvxpy as cp
 import scipy.linalg
 import scipy.optimize
+import warnings
 
 np.set_printoptions(linewidth=np.inf)
 
@@ -10,16 +11,21 @@ COMPLEX_TYPES = [np.complex, np.complex128]
 
 
 class Setting:
-    def __init__(self, n: int, L: int, r: int, sigma: float, num_type):
+    def __init__(self, n: int, L: int, r: int, sigma: float = 0.0, num_type=np.complex128):
         self.n = n
         self.L = L
-        self.r = r
+        self.r = r if r is not None else 0
         self.sigma = sigma
         self.num_type = num_type
         if self.r > self.L:
             raise ValueError(f"Error: r={self.r} cannot be larger than L={self.L}")
+        if self.r == 0:
+            warnings.warn("Inside Setting: self.r={0}. Please be sure to set it later.")
         if self.sigma < 0:
             raise ValueError(f"Error: sigma={self.sigma} cannot be negative!")
+
+    def __str__(self):
+        return f"Setting: n={self.n}, L={self.L}, r={self.r}, sigma={self.sigma}, num_type={self.num_type}"
 
     @staticmethod
     def get_default():
@@ -92,26 +98,26 @@ class UnderlyingSignal:
             v_i = self.signal_vectors.vectors[i, :]
             generated_x_samples += np.outer(self.signal_distribution_sample.sample[:, i], v_i)
         self.x_samples = generated_x_samples
+        self.cov_hat = None
+        self.cov_mat = None
 
     def get_cov_hat(self):
-        lambdas = self.signal_distribution_sample.lambdas
-        fft_complete_underlying = get_fft((lambdas * self.signal_vectors.vectors.T))
-        return np.sum(np.einsum('bi,bo->bio',
-                                fft_complete_underlying, fft_complete_underlying.conj()), axis=0)
+        if self.cov_hat is not None:
+            return self.cov_hat
+        sqrt_lambdas = np.sqrt(self.signal_distribution_sample.lambdas)
+        fft_complete_underlying = get_fft((sqrt_lambdas * self.signal_vectors.vectors.T).T)
+        self.cov_hat = np.sum(np.einsum('bi,bo->bio',
+                                        fft_complete_underlying, fft_complete_underlying.conj()), axis=0)
+        return self.cov_hat
 
-
-def default_x_samples_generation(n, lambdas, L=5, num_type=np.complex128):
-    setting = Setting(n=n, L=L, r=len(lambdas), sigma=1, num_type=num_type)
-    distribution_sample = SignalDistributionSample(lambdas=lambdas, setting=setting)
-
-    signal_vectors = SignalVectors(setting=setting)
-    x_samples = np.zeros((n, L), dtype=num_type)
-
-    # TODO: make efficient
-    for i in range(setting.r):
-        v_i = signal_vectors.vectors[i, :]
-        x_samples += np.outer(distribution_sample.sample[:, i], v_i)
-    return x_samples, signal_vectors.vectors
+    def get_cov_mat(self):
+        if self.cov_mat is not None:
+            return self.cov_mat
+        sqrt_lambdas = np.sqrt(self.signal_distribution_sample.lambdas)
+        complete_underlying = (sqrt_lambdas * self.signal_vectors.vectors.T).T
+        self.cov_mat = np.sum(np.einsum('bi,bo->bio',
+                                        complete_underlying, complete_underlying.conj()), axis=0)
+        return self.cov_mat
 
 
 def create_matrix_from_diagonals(diagonals):
@@ -328,32 +334,6 @@ def get_cov_hat(x_samples):
     return get_cov(fft_samples)
 
 
-def get_cov_hat_from_v_arr(v_arr, lambdas=None):
-    r, L = v_arr.shape
-    if lambdas is None:
-        lambdas = [1] * r
-    assert len(lambdas) == r
-    v_arr2 = np.copy(v_arr)
-    lambdas_sqrt = np.sqrt(lambdas)
-    for i in range(r):
-        v_arr2[i, :] = lambdas_sqrt[i] * v_arr[i, :]
-    fft_samples = get_fft(v_arr2)
-    return np.sum(np.einsum('bi,bo->bio', fft_samples, fft_samples.conj()), axis=0)
-
-
-def get_cov_mat_from_v_arr(v_arr, lambdas=None):
-    r, L = v_arr.shape
-    if lambdas is None:
-        lambdas = [1] * r
-    assert len(lambdas) == r
-    v_arr2 = np.copy(v_arr)
-    sqrt_lambdas = np.sqrt(lambdas)
-    for i in range(r):
-        a = sqrt_lambdas[i] * v_arr[i, :]
-        v_arr2[i, :] = a
-    return np.sum(np.einsum('bi,bo->bio', v_arr2, v_arr2.conj()), axis=0)
-
-
 def get_H_matrix(C_x, i, j):
     # TODO: roll is extremely inefficient, improve efficiency.
     rotated_c_x = np.roll(C_x, (-i, -j), axis=(0, 1))
@@ -434,7 +414,10 @@ if __name__ == "__main__":
     np.random.seed(42)
     L = 10
     lambdas = [1, 0.75, 0.5]
-    x_samples, v_arr = default_x_samples_generation(n=10000, L=L, lambdas=lambdas)
-    cov_hat = get_cov_hat_from_v_arr(v_arr, lambdas)
-    c_x_estimator = recover_c_x_estimator(default_sample_shuffle(x_samples))
-    print(calculate_error_up_to_circulant(c_x_estimator, cov_hat))
+
+    setting = Setting(n=10000, L=10, r=len(lambdas))
+    signal_ds = SignalDistributionSample(lambdas, setting)
+    underlying_signal = UnderlyingSignal(signal_ds)
+
+    c_x_estimator = recover_c_x_estimator(default_sample_shuffle(underlying_signal.x_samples))
+    print(calculate_error_up_to_circulant(c_x_estimator, underlying_signal.get_cov_hat()))
