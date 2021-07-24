@@ -9,6 +9,79 @@ REAL_TYPES = [np.double, np.longdouble, np.float64]
 COMPLEX_TYPES = [np.complex, np.complex128]
 
 
+class Setting:
+    def __init__(self, n: int, L: int, r: int, sigma: float, num_type):
+        self.n = n
+        self.L = L
+        self.r = r
+        self.sigma = sigma
+        self.num_type = num_type
+        if self.r > self.L:
+            raise ValueError(f"Error: r={self.r} cannot be larger than L={self.L}")
+        if self.sigma < 0:
+            raise ValueError(f"Error: sigma={self.sigma} cannot be negative!")
+
+
+class SignalVectors:
+    def __init__(self, vectors=None, generation_method=None, setting: Setting = None):
+        if vectors is not None:
+            self.vectors = vectors
+            return
+
+        if setting is None:
+            raise ValueError("Error: can't generate signal vectors with setting=None.")
+        self.vectors = SignalVectors.generate_vectors(generation_method, setting)
+
+    @staticmethod
+    def generate_vectors(generation_method, setting: Setting):
+        L, r, num_type = setting.L, setting.r, setting.num_type
+        if generation_method is None or generation_method == 'default':
+            v_arr = np.random.uniform(0, 1, size=(r, L))
+            return v_arr
+        raise ValueError(f"Unknown generation method {generation_method} for signal vectors.")
+
+
+class SignalDistributionSample:
+    def __init__(self, lambdas, setting: Setting, generation_method=None):
+        self.validate(lambdas, setting)
+        self.mus = np.zeros(setting.r)
+
+        if generation_method is None or generation_method == 'default':
+            self.distribution = 'normal'
+            if setting.num_type in COMPLEX_TYPES:
+                self.sample = np.random.normal(self.mus, lambdas / np.sqrt(2), size=(setting.n, setting.r)) + \
+                              np.random.normal(self.mus, lambdas / np.sqrt(2), size=(setting.n, setting.r)) * 1j
+            elif setting.num_type in REAL_TYPES:
+                self.sample = np.random.normal(self.mus, lambdas, size=(setting.n, setting.r))
+            else:
+                raise ValueError(f"Bad num_type given! num_type={setting.num_type}")
+        else:
+            raise ValueError(f"Unknown generation method: {generation_method}")
+
+    @staticmethod
+    def validate(lambdas, setting: Setting):
+        if setting.r != len(lambdas):
+            raise ValueError(f"Inconsistent lambda values: {len(lambdas)} and r in setting: {setting.r}")
+
+
+def default_x_samples_generation(n, lambdas=None, L=5, num_type=np.complex128):
+    if lambdas is None:
+        setting = Setting(n=n, L=L, r=1, sigma=1, num_type=num_type)
+        distribution_sample = SignalDistributionSample(lambdas=np.array([1]), setting=setting)
+    else:
+        setting = Setting(n=n, L=L, r=len(lambdas), sigma=1, num_type=num_type)
+        distribution_sample = SignalDistributionSample(lambdas=lambdas, setting=setting)
+
+    signal_vectors = SignalVectors(setting=setting)
+    x_samples = np.zeros((n, L), dtype=num_type)
+
+    # TODO: make efficient
+    for i in range(setting.r):
+        v_i = signal_vectors.vectors[i, :]
+        x_samples += np.outer(distribution_sample.sample[:, i], v_i)
+    return x_samples, signal_vectors.vectors
+
+
 def create_matrix_from_diagonals(diagonals):
     """
     Function takes L diagonals of dimension L and creates
@@ -200,25 +273,6 @@ def default_sample_noising(x_samples, sigma=0, num_type=np.complex128):
     elif num_type in REAL_TYPES:
         return x_samples + np.random.normal(0, sigma, size=(N, L))
     raise ValueError(f"Invalid num_type: {num_type}")
-
-
-def default_x_samples_generation(n, lambdas=None, L=5, num_type=np.complex128):
-    if lambdas is None:
-        lambdas = [1]
-    r = len(lambdas)
-    v_arr = np.zeros((L, r), dtype=num_type)
-    x_samples = np.zeros((n, L), dtype=num_type)
-    for i, lamb in enumerate(lambdas):
-        v_i = np.random.uniform(0, 1, L)
-        v_arr[:, i] = v_i
-        if num_type in COMPLEX_TYPES:
-            x_samples += np.outer(np.random.normal(0, lamb / np.sqrt(2), size=n) +
-                                  np.random.normal(0, lamb / np.sqrt(2), size=n) * 1j, v_i)
-        elif num_type in REAL_TYPES:
-            x_samples += np.outer(np.random.normal(0, lamb, size=n), v_i)
-        else:
-            raise ValueError(f"Invalid num_type: {num_type}")
-    return x_samples, v_arr.T
 
 
 def get_cov(x_samples):
