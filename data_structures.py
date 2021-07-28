@@ -130,6 +130,7 @@ class ObservedSignal:
         self.sigma = 0 if sigma is None else sigma
         self.setting = self.underlying_signal.setting
         self.setting.sigma = self.sigma
+        self.num_type = self.setting.num_type
 
         # Calculate the observed signal.
         shuffled_samples = self.shuffle_method(self.x_samples)

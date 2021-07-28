@@ -182,3 +182,6 @@ def solve_ambiguities(C_x, r=None):
     return reverse_cov_fft(cov_estimator)
 
 
+def fully_recover_c_x(data, sigma=0, num_type=np.complex128, r=None):
+    c_x_estimator = recover_c_x_estimator(data, sigma, num_type)
+    return solve_ambiguities(c_x_estimator, r)
