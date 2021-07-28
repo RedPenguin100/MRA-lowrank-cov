@@ -111,14 +111,14 @@ def get_H_matrix(C_x, i, j):
     return C_x * rotated_c_x.conj()  # Hadamard product
 
 
-def get_V_matrix(H, r_squared):
+def get_V_matrix(H, vectors_amount):
     """
     :param H: Hermitian or real symmetric matrix.
     """
     L1, L = H.shape
     assert L1 == L
     w, v = np.linalg.eig(H)
-    arg_max_eigvals = w.argsort()[-r_squared:][::-1]
+    arg_max_eigvals = w.argsort()[-vectors_amount:][::-1]
     return v[:, arg_max_eigvals]
 
 
@@ -142,16 +142,17 @@ def solve_ambiguities(C_x, r=None):
     L1, L = C_x.shape
     assert L1 == L
     if r is None:
-        r_squared = L - 1
+        r_squared = np.ceil(np.sqrt(L) - 1) ** 2
     else:
         r_squared = r ** 2
 
-    V_array = np.zeros((L, L, r_squared), dtype=np.complex128)
+    vectors_amount = min(r_squared, L)
+    V_array = np.zeros((L, L, vectors_amount), dtype=np.complex128)
     for i in range(L):
         H_ii = get_H_matrix(C_x, i, i)
-        V_array[i] = get_V_matrix(H_ii, r_squared=r_squared)
+        V_array[i] = get_V_matrix(H_ii, vectors_amount=vectors_amount)
 
-    Z_array = np.zeros((L, L ** 2, r_squared ** 2), dtype=np.complex128)
+    Z_array = np.zeros((L, L ** 2, vectors_amount ** 2), dtype=np.complex128)
     for i in range(L):
         # Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
         Z_array[i] = np.kron(V_array[(i + 1) % L].conj(), V_array[i])
