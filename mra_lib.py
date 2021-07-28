@@ -59,14 +59,8 @@ class SignalDistributionSample:
         self.mus = np.zeros(setting.r)
         if generation_method is None or generation_method == 'default':
             self.distribution = 'normal'
-            if setting.num_type in COMPLEX_TYPES:
-                self.sample = np.random.normal(self.mus, np.sqrt(lambdas) / np.sqrt(2), size=(setting.n, setting.r)) + \
-                              np.random.normal(self.mus, np.sqrt(lambdas) / np.sqrt(2),
-                                               size=(setting.n, setting.r)) * 1j
-            elif setting.num_type in REAL_TYPES:
-                self.sample = np.random.normal(self.mus, np.sqrt(lambdas), size=(setting.n, setting.r))
-            else:
-                raise ValueError(f"Bad num_type given! num_type={setting.num_type}")
+            self.sample = normal_distribution(mu=self.mus, sigma=np.sqrt(lambdas), size=(setting.n, setting.r),
+                                              num_type=setting.num_type)
         else:
             raise ValueError(f"Unknown generation method: {generation_method}")
 
@@ -118,6 +112,44 @@ class UnderlyingSignal:
         self.cov_mat = np.sum(np.einsum('bi,bo->bio',
                                         complete_underlying, complete_underlying.conj()), axis=0)
         return self.cov_mat
+
+
+class ObservedSignal:
+    def __init__(self, y_samples=None, underlying_signal: UnderlyingSignal = None,
+                 shuffle_method=None, sigma: float = None, distribution=None):
+        if y_samples is not None:
+            self.y_samples = y_samples
+            self.sigma = None
+            self.shuffle_method = None
+            return
+
+        self.distribution = 'normal' if distribution is None \
+                                        or distribution == 'default' \
+                                        or distribution == 'normal' else distribution
+        self.underlying_signal = underlying_signal
+        self.x_samples = self.underlying_signal.x_samples
+        self.shuffle_method = self._get_shuffle_method(shuffle_method)
+        self.sigma = 0 if sigma is None else sigma
+        self.setting = self.underlying_signal.setting
+        self.setting.sigma = self.sigma
+
+        # Calculate the observed signal.
+        self.y_samples = self.shuffle_method(self.x_samples) + self._get_noise(size=self.x_samples.shape,
+                                                                               num_type=self.setting.num_type,
+                                                                               sigma=self.sigma,
+                                                                               distribution=self.distribution)
+
+    @staticmethod
+    def _get_shuffle_method(shuffle_method):
+        if shuffle_method is None or shuffle_method == 'default':
+            return default_sample_shuffle
+        raise ValueError(f"Unknown shuffle_method: {shuffle_method}")
+
+    @staticmethod
+    def _get_noise(size, num_type, sigma=0, distribution=None):
+        if distribution is None or distribution == 'default' or distribution == 'normal':
+            return normal_distribution(mu=np.zeros_like(sigma), sigma=sigma, size=size, num_type=num_type)
+        raise ValueError(f"Unknown noise distribution method: {distribution}")
 
 
 def create_matrix_from_diagonals(diagonals):
@@ -301,24 +333,26 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     return cov_estimator
 
 
-def default_sample_shuffle(x_samples, num_type=np.complex128):
+def default_sample_shuffle(x_samples):
     N, L = x_samples.shape
-    rolled_samples = np.zeros(x_samples.shape, dtype=num_type)
+    rolled_samples = np.zeros(x_samples.shape, dtype=x_samples.dtype)
     for i in range(N):
         rolled_samples[i] = np.roll(x_samples[i], i % L)
 
     return rolled_samples
 
 
-def default_sample_noising(x_samples, sigma=0, num_type=np.complex128):
-    N, L = x_samples.shape
+def normal_distribution(mu, sigma, size, num_type):
     if num_type in COMPLEX_TYPES:
-        return x_samples + np.random.normal(0, sigma / np.sqrt(2), size=(N, L)) \
-               + np.random.normal(0, sigma / np.sqrt(2),
-                                  size=(N, L)) * 1j
-    elif num_type in REAL_TYPES:
-        return x_samples + np.random.normal(0, sigma, size=(N, L))
-    raise ValueError(f"Invalid num_type: {num_type}")
+        return np.random.normal(mu, sigma / np.sqrt(2), size=size) + \
+               np.random.normal(mu, sigma / np.sqrt(2), size=size) * 1j
+    if num_type in REAL_TYPES:
+        return np.random.normal(mu, sigma, size=size)
+    raise ValueError(f"Invalid num_type for normal distribution: {num_type}")
+
+
+def default_sample_noising(x_samples, sigma=0, num_type=np.complex128):
+    return x_samples + normal_distribution(mu=0, sigma=sigma, size=x_samples.shape, num_type=num_type)
 
 
 def get_cov(x_samples):

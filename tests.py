@@ -46,11 +46,11 @@ def test_error_circulant_distortion_no_phi():
 
 
 @pytest.mark.parametrize('setting,error', [
-    (Setting(n=1000000, L=3, r=1, num_type=np.longdouble, sigma=0), 1e-1),
-    (Setting(n=1000000, L=3, r=1, num_type=np.complex128, sigma=0), 1e-1)
+    (Setting(n=100000, L=3, r=1, num_type=np.longdouble, sigma=0), 1e-1),
+    (Setting(n=100000, L=3, r=1, num_type=np.complex128, sigma=0), 1e-1)
 ])
 def test_trispectrum_identity(setting, error):
-    lambdas = np.array([1])
+    lambdas = np.array([0.3])
     vec = np.array([1, 2, 3])
     vec = vec / np.linalg.norm(vec)
     signal_vectors = SignalVectors(vectors=np.array([vec], dtype=setting.num_type))
@@ -59,13 +59,14 @@ def test_trispectrum_identity(setting, error):
                                              lambdas=lambdas * setting.r, setting=setting))
     x_samples = underlying_signal.x_samples
     sigma = setting.sigma
-
-    x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples, num_type=setting.num_type),
+    x_samples_fft = get_fft(default_sample_noising(default_sample_shuffle(x_samples),
                                                    sigma=sigma))
     tri_from_data = signal_trispectrum_from_data(x_samples_fft)
     tri_from_cov = signal_trispectrum_from_cov_hat(underlying_signal.get_cov_hat(), sigma=sigma,
                                                    num_type=setting.num_type)
-    assert pytest.approx(np.linalg.norm(tri_from_data - tri_from_cov), abs=error) == 0
+    actual_error = np.linalg.norm(tri_from_data - tri_from_cov)
+    print(actual_error)
+    assert pytest.approx(actual_error, abs=error) == 0
 
 
 def test_get_H():
@@ -73,8 +74,7 @@ def test_get_H():
     setting = Setting(n=200000, L=5, r=len(lambdas))
     signal_ds = SignalDistributionSample(lambdas=lambdas, setting=setting)
     underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
-    x_samples = underlying_signal.x_samples
-    c_x = recover_c_x_estimator(default_sample_shuffle(x_samples))
+    c_x = recover_c_x_estimator(default_sample_shuffle(underlying_signal.x_samples))
     for i in range(setting.L):
         h_ii_estimator = get_H_matrix(c_x, i, i)
         h_ii = get_H_matrix(underlying_signal.get_cov_hat(), i, i)
@@ -82,7 +82,7 @@ def test_get_H():
 
 
 @pytest.mark.parametrize('setting,error', [
-    (Setting(n=1000, r=None, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
+    (Setting(n=3000, r=None, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
     (Setting(n=2000, r=None, L=10, sigma=0.1, num_type=np.longdouble), 1e-1),
 ])
 def test_solve_ambiguities_complex(setting, error):
@@ -92,10 +92,9 @@ def test_solve_ambiguities_complex(setting, error):
 
     signal_ds = SignalDistributionSample(lambdas=lambdas, setting=setting)
     underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
-    x_samples = underlying_signal.x_samples
-    c_x = recover_c_x_estimator(
-        default_sample_noising(default_sample_shuffle(x_samples), setting.sigma, num_type=setting.num_type),
-        setting.sigma, num_type=setting.num_type)
+    observed_signal = ObservedSignal(underlying_signal=underlying_signal, sigma=setting.sigma)
+
+    c_x = recover_c_x_estimator(observed_signal.y_samples, setting.sigma, num_type=setting.num_type)
     print(calculate_error_up_to_circulant(c_x, underlying_signal.get_cov_hat()))
 
     cov_estimator = solve_ambiguities(c_x, r=len(lambdas))
