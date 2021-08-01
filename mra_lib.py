@@ -52,7 +52,7 @@ def signal_trispectrum_from_data(data_fft):
                 key2 = (min(k2, (k1 - k2 + k3) % L), max(k2, (k1 - k2 + k3) % L))
                 if (key1, key2) not in cache:
                     cache[(key1, key2)] = np.mean(data_fft[:, k1] * data_fft[:, k3] * (
-                                data_fft[:, k2] * data_fft[:, (k1 - k2 + k3) % L]).conj(), axis=0,
+                            data_fft[:, k2] * data_fft[:, (k1 - k2 + k3) % L]).conj(), axis=0,
                                                   dtype=np.complex128)
                 trispectrum[k1, k2, k3] = cache[(key1, key2)]
     return trispectrum
@@ -64,9 +64,14 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     """
     N, L = data.shape
 
+    # Part 1 - compute fft
     data_fft = np.fft.fft(data)
+
+    # Part 2 - compute power spectrum, trispectrum
     p_y_estimator = signal_power_spectrum_from_data(data_fft)
     t_y_estimator = signal_trispectrum_from_data(data_fft)
+
+    # Part 3 - Obtain the G matrices.
     G_arr = [np.outer(p_y_estimator, p_y_estimator)]
     constraints = []
     for i in range(1, L):
@@ -99,12 +104,15 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
     print(problem.status)
     G_arr = [G_arr[i].value for i in range(1, len(G_arr))]
 
+    # Part 4 - get d_estimates from best rank 1 approximation for G matrices.
     d_estimates = [p_y_estimator]
     for G in G_arr:
         w, v = np.linalg.eig(G)
         largest_eigval = np.max(w)
         largest_eigvec = v[:, np.argmax(w)]
         d_estimates.append(np.sqrt(largest_eigval) * largest_eigvec)
+    
+    # Part 5 - glue it all together.
     cov_estimator = create_matrix_from_diagonals(np.array(d_estimates)) - L * np.diag(np.full(L, sigma ** 2))
     return cov_estimator
 
@@ -150,15 +158,16 @@ def solve_ambiguities(C_x, r=None):
     else:
         r_squared = r ** 2
 
+    # Part 2 of the algorithm
     vectors_amount = min(r_squared, L)
     V_array = np.zeros((L, L, vectors_amount), dtype=np.complex128)
     for i in range(L):
         H_ii = get_H_matrix(C_x, i, i)
         V_array[i] = get_V_matrix(H_ii, vectors_amount=vectors_amount)
 
+    # Part 3 - form the A matrix
     Z_array = np.zeros((L, L ** 2, vectors_amount ** 2), dtype=np.complex128)
     for i in range(L):
-        # Z_array[i] = np.kron(V_array[i], V_array[(i + 1) % L].conj())
         Z_array[i] = np.kron(V_array[(i + 1) % L].conj(), V_array[i])
     block_diag = scipy.linalg.block_diag(*list(Z_array))
 
@@ -171,10 +180,12 @@ def solve_ambiguities(C_x, r=None):
             M_array[i][m] = H_i_i1.flatten(order='F') * circulant
     M_mat = np.hstack(M_array).T
     A = np.hstack((M_mat, -block_diag))
+
+    # Part 4 - Efficient method for italic V
     w, v = np.linalg.eig(A.conj().T @ A)
 
     V = v[:, np.argmin(w)]
-    # Recover phases
+    # Part 5 - Recover phases
     phi = np.zeros(L, dtype=np.complex128)
     k = 0
     for m in range(1, L):
@@ -183,6 +194,8 @@ def solve_ambiguities(C_x, r=None):
                  + (2 * np.pi * k * m) / L
     phases = np.exp(-1j * phi)
     cov_estimator = C_x * scipy.linalg.circulant(phases)
+
+    # Part 6 - inverse fft.
     return reverse_cov_fft(cov_estimator)
 
 
