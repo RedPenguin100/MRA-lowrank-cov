@@ -44,13 +44,17 @@ def signal_trispectrum_from_data(data_fft):
     """
     N, L = data_fft.shape
     trispectrum = np.zeros((L, L, L), dtype=np.complex128)
+    cache = {}
     for k1 in range(L):
         for k2 in range(L):
             for k3 in range(L):
-                data_trispectra = data_fft[:, k1] * data_fft[:, k2].conj() \
-                                  * data_fft[:, k3] * data_fft[:, (k1 - k2 + k3) % L].conj()
-                trispectrum[k1, k2, k3] = np.mean(data_trispectra, axis=0, dtype=np.complex128)
-
+                key1 = (min(k1, k3), max(k1, k3))
+                key2 = (min(k2, (k1 - k2 + k3) % L), max(k2, (k1 - k2 + k3) % L))
+                if (key1, key2) not in cache:
+                    cache[(key1, key2)] = np.mean(data_fft[:, k1] * data_fft[:, k3] * (
+                                data_fft[:, k2] * data_fft[:, (k1 - k2 + k3) % L]).conj(), axis=0,
+                                                  dtype=np.complex128)
+                trispectrum[k1, k2, k3] = cache[(key1, key2)]
     return trispectrum
 
 
