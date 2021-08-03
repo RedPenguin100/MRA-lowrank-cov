@@ -52,17 +52,31 @@ class SignalVectors:
 
 
 class SignalDistributionSample:
-    def __init__(self, lambdas, setting: Setting, generation_method=None):
-        self.lambdas = lambdas
+    def __init__(self, setting: Setting, lambdas=None, generation_method=None):
         self.setting = setting
-        self.validate(lambdas, self.setting)
+        self._init_lambdas(lambdas)
+        self.validate(self.lambdas, self.setting)
         self.mus = np.zeros(setting.r)
         if generation_method is None or generation_method == 'default':
             self.distribution = 'normal'
-            self.sample = normal_distribution(mu=self.mus, sigma=np.sqrt(lambdas), size=(setting.n, setting.r),
-                                              num_type=setting.num_type)
+            self.sample = get_distribution(mu=self.mus, sigma=np.sqrt(self.lambdas), size=(setting.n, setting.r),
+                                           num_type=setting.num_type)
+        elif generation_method == 'laplace':
+            self.distribution = 'laplace'
+            self.sample = get_distribution(mu=self.mus, sigma=np.sqrt(self.lambdas),
+                                           num_type=setting.num_type,
+                                           size=(setting.n, setting.r),
+                                           distribution=np.random.laplace
+                                           )
         else:
             raise ValueError(f"Unknown generation method: {generation_method}")
+
+    def _init_lambdas(self, lambdas):
+        if lambdas is None:
+            l = np.random.uniform(0, 1, size=self.setting.r)
+            self.lambdas = l / sum(l)
+            return
+        self.lambdas = lambdas
 
     @staticmethod
     def validate(lambdas, setting: Setting):
@@ -153,7 +167,10 @@ class ObservedSignal:
     @staticmethod
     def _get_noise(size, num_type, sigma, distribution=None):
         if distribution is None or distribution == 'default' or distribution == 'normal':
-            return normal_distribution(mu=np.zeros_like(sigma), sigma=sigma, size=size, num_type=num_type)
+            return get_distribution(mu=np.zeros_like(sigma), sigma=sigma, size=size, num_type=num_type)
+        elif distribution == 'laplace':
+            return get_distribution(mu=np.zeros_like(sigma), sigma=sigma, size=size, num_type=num_type,
+                                    distribution=np.random.laplace)
         raise ValueError(f"Unknown noise distribution method: {distribution}")
 
 
@@ -166,14 +183,14 @@ def default_sample_shuffle(x_samples):
     return rolled_samples
 
 
-def normal_distribution(mu, sigma, size, num_type):
+def get_distribution(mu, sigma, size, num_type, distribution=np.random.normal):
     if num_type in COMPLEX_TYPES:
-        return np.random.normal(mu, sigma / np.sqrt(2), size=size) + \
-               np.random.normal(mu, sigma / np.sqrt(2), size=size) * 1j
+        return distribution(mu, sigma / np.sqrt(2), size=size) + \
+               distribution(mu, sigma / np.sqrt(2), size=size) * 1j
     if num_type in REAL_TYPES:
-        return np.random.normal(mu, sigma, size=size)
-    raise ValueError(f"Invalid num_type for normal distribution: {num_type}")
+        return distribution(mu, sigma, size=size)
+    raise ValueError(f"Invalid num_type for distribution: {num_type}")
 
 
 def default_sample_noising(x_samples, sigma=0, num_type=np.complex128):
-    return x_samples + normal_distribution(mu=0, sigma=sigma, size=x_samples.shape, num_type=num_type)
+    return x_samples + get_distribution(mu=0, sigma=sigma, size=x_samples.shape, num_type=num_type)

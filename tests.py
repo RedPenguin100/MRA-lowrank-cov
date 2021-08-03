@@ -84,6 +84,31 @@ def test_get_H():
 
 
 @pytest.mark.parametrize('setting,error', [
+    (Setting(n=5000, r=3, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
+    (Setting(n=5000, r=3, L=10, sigma=0.1, num_type=np.longdouble), 1e-1),
+    (Setting(n=5000, r=3, L=10, sigma=0.0, num_type=np.complex128), 1e-1),
+    (Setting(n=5000, r=3, L=10, sigma=0.0, num_type=np.longdouble), 1e-1),
+    (Setting(n=50000, r=3, L=10, sigma=0.0, num_type=np.complex128), 1e-1),
+    (Setting(n=50000, r=3, L=10, sigma=0.0, num_type=np.longdouble), 1e-1),
+    (Setting(n=5000, r=2, L=5, sigma=0.0, num_type=np.complex128), 1e-1),
+    (Setting(n=5000, r=2, L=5, sigma=0.0, num_type=np.longdouble), 1e-1),
+])
+def test_solve_ambiguities(setting, error):
+    signal_ds = SignalDistributionSample(setting=setting)
+    underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
+    observed_signal = ObservedSignal(underlying_signal=underlying_signal, sigma=setting.sigma)
+
+    c_x = recover_c_x_estimator(observed_signal.y_samples, setting.sigma, num_type=setting.num_type)
+    print(calculate_error_up_to_circulant(c_x, underlying_signal.get_cov_hat()))
+
+    cov_estimator = solve_ambiguities(c_x, r=setting.r)
+
+    error = calculate_error_up_to_shifts(underlying_signal.get_cov_mat(), cov_estimator)
+    print(f"Final error: {error}")
+    assert pytest.approx(error, abs=error) == 0
+
+
+@pytest.mark.parametrize('setting,error', [
     (Setting(n=5000, r=None, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
     (Setting(n=5000, r=None, L=10, sigma=0.1, num_type=np.longdouble), 1e-1),
 ])
@@ -92,15 +117,15 @@ def test_solve_ambiguities_complex(setting, error):
     setting.r = len(lambdas)
     print(setting)
 
-    signal_ds = SignalDistributionSample(lambdas=lambdas, setting=setting)
+    signal_ds = SignalDistributionSample(setting=setting, lambdas=lambdas)
     underlying_signal = UnderlyingSignal(signal_distribution_sample=signal_ds)
     observed_signal = ObservedSignal(underlying_signal=underlying_signal, sigma=setting.sigma)
 
     c_x = recover_c_x_estimator(observed_signal.y_samples, setting.sigma, num_type=setting.num_type)
     print(calculate_error_up_to_circulant(c_x, underlying_signal.get_cov_hat()))
 
-    cov_estimator = solve_ambiguities(c_x, r=len(lambdas))
+    cov_estimator = solve_ambiguities(c_x, r=setting.r)
 
     error = calculate_error_up_to_shifts(underlying_signal.get_cov_mat(), cov_estimator)
     print(f"Final error: {error}")
-    assert pytest.approx(error, abs=1e-1) == 0
+    assert pytest.approx(error, abs=error) == 0

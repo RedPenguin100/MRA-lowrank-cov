@@ -18,7 +18,7 @@ def calculate_error_up_to_shifts(cov_estimator, cov_real):
     for i in range(L):
         error = np.min((np.linalg.norm(cov_estimator - cov_real, ord='fro'), error))
         cov_real = np.roll(cov_real, (1, 1), axis=(0, 1))
-    return error / np.linalg.norm(cov_real, ord='fro')
+    return np.power(error / np.linalg.norm(cov_real, ord='fro'), 2)
 
 
 # Utility

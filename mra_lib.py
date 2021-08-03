@@ -111,7 +111,7 @@ def recover_c_x_estimator(data, sigma=0, num_type=np.complex128):
         largest_eigval = np.max(w)
         largest_eigvec = v[:, np.argmax(w)]
         d_estimates.append(np.sqrt(largest_eigval) * largest_eigvec)
-    
+
     # Part 5 - glue it all together.
     cov_estimator = create_matrix_from_diagonals(np.array(d_estimates)) - L * np.diag(np.full(L, sigma ** 2))
     return cov_estimator
