@@ -112,7 +112,7 @@ def test_solve_ambiguities(setting, error):
     (Setting(n=5000, r=None, L=10, sigma=0.1, num_type=np.complex128), 1e-1),
     (Setting(n=5000, r=None, L=10, sigma=0.1, num_type=np.longdouble), 1e-1),
 ])
-def test_solve_ambiguities_complex(setting, error):
+def test_solve_ambiguities_custom_lambdas(setting, error):
     lambdas = [1, 0.75, 0.5]
     setting.r = len(lambdas)
     print(setting)
